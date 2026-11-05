@@ -1,6 +1,6 @@
 {
-  "lastChangelogVersion": "0.79.1",
-  "theme": "nebula-pulse",
+  "lastChangelogVersion": "1.5.0",
+  "theme": "catppuccin-mocha",
   "compaction": {
     "enabled": true
   },
@@ -32,9 +32,10 @@
     "npm:@juicesharp/rpiv-btw",
     "npm:@ff-labs/pi-fff"
   ],
-  "defaultThinkingLevel": "medium",
+  "defaultThinkingLevel": "high",
   "hideThinkingBlock": true,
   "skills": [
     "+skills/find-skills/SKILL.md"
-  ]
+  ],
+  "defaultProjectTrust": "always"
 }
