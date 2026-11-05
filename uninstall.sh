@@ -168,6 +168,7 @@ remove_restored_tree_entries "$ROOT/themes" "$PI_HOME/themes"
 remove_restored_tree_entries "$ROOT/skills" "$PI_HOME/skills"
 remove_if_matches_file "$PI_HOME/settings.json" "$ROOT/config/settings.example.json"
 remove_if_matches_file "$PI_HOME/mcp.json" "$ROOT/config/mcp.example.json"
+remove_if_matches_file "$PI_HOME/playwright-mcp.json" "$ROOT/config/playwright-mcp.json"
 remove_self_package_reference
 
 echo "Done. Pi's own installation is untouched. If your shell cached $BIN_DIR/pi, run: hash -r"

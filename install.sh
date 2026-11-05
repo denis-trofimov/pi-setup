@@ -74,6 +74,9 @@ Options:
   --no-backup     Explicitly skip backup prompts/policy; useful in scripts.
   --revert DIR    Restore extensions/themes/skills/settings/mcp from a backup dir.
 
+Browser automation (playwright MCP) is checked but never installed automatically.
+If prerequisites are missing, install.sh only prints the commands to run.
+
 Recommended: install the Pi CLI first. The compact launcher wraps an existing
 Pi binary and will look in /usr/local/bin/pi, /usr/bin/pi, /opt/homebrew/bin/pi,
 or PI_REAL_BIN.
@@ -165,7 +168,7 @@ make_backup() {
       touch "$BACKUP_DIR/.absent-$name"
     fi
   done
-  for name in settings.json mcp.json; do
+  for name in settings.json mcp.json playwright-mcp.json; do
     if [[ -f "$PI_HOME/$name" ]]; then
       cp "$PI_HOME/$name" "$BACKUP_DIR/$name"
     else
@@ -201,7 +204,7 @@ revert_backup() {
       echo "Backup has no $name/ state; leaving $PI_HOME/$name unchanged."
     fi
   done
-  for name in settings.json mcp.json; do
+  for name in settings.json mcp.json playwright-mcp.json; do
     if [[ -f "$backup/$name" ]]; then
       copy_path "$backup/$name" "$PI_HOME/$name"
     elif [[ -f "$backup/.absent-$name" ]]; then
@@ -267,6 +270,49 @@ if changed:
 PY
 }
 
+check_browser_prereqs() {
+  # Non-fatal, advisory only: the playwright MCP server needs Node/npx, an
+  # installed browser, and a display for headed runs. Missing pieces never break
+  # Pi itself, only browser UAT, so this never fails the install.
+  if [[ "$DRY_RUN" == "1" ]]; then
+    echo "would check browser automation prerequisites (npx, browser, display)"
+    return 0
+  fi
+
+  local missing=0
+
+  if ! command -v npx >/dev/null 2>&1; then
+    echo "note: npx not found. The playwright MCP server needs Node.js:"
+    echo "        install Node, then restart Pi so the server can start."
+    missing=1
+  fi
+
+  local browser_found=0
+  for candidate in google-chrome google-chrome-stable chromium chromium-browser; do
+    command -v "$candidate" >/dev/null 2>&1 && browser_found=1 && break
+  done
+  if [[ "$browser_found" == "0" ]]; then
+    # shellcheck disable=SC2086
+    compgen -G "$HOME/.cache/ms-playwright/chromium-*" >/dev/null 2>&1 && browser_found=1
+  fi
+  if [[ "$browser_found" == "0" ]]; then
+    echo "note: no Chrome/Chromium found for browser UAT. Install one of:"
+    echo "        sudo apt install chromium-browser   # or Google Chrome"
+    echo "        npx playwright install chromium"
+    missing=1
+  fi
+
+  if [[ -z "${DISPLAY:-}" && -z "${WAYLAND_DISPLAY:-}" ]]; then
+    echo "note: no DISPLAY/WAYLAND_DISPLAY. Browser UAT will fail in headed mode."
+    echo "        Use headless: add --headless to the playwright args in $PI_HOME/mcp.json"
+    missing=1
+  fi
+
+  if [[ "$missing" == "0" ]]; then
+    echo "Browser automation prerequisites look good. Verify with: pi mcp list"
+  fi
+}
+
 if [[ -n "$REVERT_DIR" ]]; then
   revert_backup "$REVERT_DIR"
   exit 0
@@ -291,10 +337,15 @@ if [[ "$COPY_CONFIG" == "1" ]]; then
   if [[ -f "$ROOT/config/mcp.example.json" ]]; then
     copy_path "$ROOT/config/mcp.example.json" "$PI_HOME/mcp.json"
   fi
+  if [[ -f "$ROOT/config/playwright-mcp.json" ]]; then
+    copy_path "$ROOT/config/playwright-mcp.json" "$PI_HOME/playwright-mcp.json"
+  fi
   remove_legacy_package_reference
 else
   echo "Skipping config copy. To copy settings/mcp examples, run: ./install.sh --copy-config"
 fi
+
+check_browser_prereqs
 
 if [[ "$DRY_RUN" == "1" ]]; then
   echo "would run: $ROOT/setup_sync.sh"

@@ -148,8 +148,13 @@ test -d /root/.pi/agent/themes
 test -d /root/.pi/agent/skills
 test -f /root/.pi/agent/settings.json
 test -f /root/.pi/agent/mcp.json
+test -f /root/.pi/agent/playwright-mcp.json
 test -x /root/.local/bin/pi
 test -L /root/.local/bin/pi-setup-sync
+
+grep -q '"playwright"' /root/.pi/agent/mcp.json
+grep -q 'start-maximized' /root/.pi/agent/playwright-mcp.json
+grep -q '@playwright/mcp@' /root/.pi/agent/mcp.json
 
 ext_count=$(find /root/.pi/agent/extensions -type f | wc -l)
 theme_count=$(find /root/.pi/agent/themes -type f -name "*.json" | wc -l)
@@ -199,6 +204,7 @@ test -x /usr/local/bin/pi
 test ! -e /root/.local/bin/pi
 test ! -e /root/.local/bin/pi-setup-sync
 test ! -e /root/.pi/agent/themes/nebula-pulse.json
+test ! -e /root/.pi/agent/playwright-mcp.json
 
 echo "remote clone pi-setup e2e passed"
 '

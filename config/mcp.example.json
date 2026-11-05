@@ -2,6 +2,17 @@
   "mcpServers": {
     "grep": {
       "url": "https://mcp.grep.app"
+    },
+    "playwright": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp@0.0.84",
+        "--isolated",
+        "--config",
+        "~/.pi/agent/playwright-mcp.json"
+      ],
+      "description": "Drive a real Chromium browser: navigate, click, type, snapshot pages, screenshots, console/network"
     }
   }
 }

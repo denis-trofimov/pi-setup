@@ -1,0 +1,8 @@
+{
+  "browser": {
+    "launchOptions": {
+      "args": ["--start-maximized", "--ozone-platform=x11"]
+    },
+    "contextOptions": { "viewport": null }
+  }
+}

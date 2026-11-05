@@ -22,6 +22,10 @@ themes.backup-*/
 # Serena AI tool state
 .serena/
 
+# Playwright MCP artifacts and optional persistent browser profile
+.playwright-mcp/
+playwright-profile/
+
 # Node / editor noise
 node_modules/
 .DS_Store

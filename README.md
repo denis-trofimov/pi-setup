@@ -42,7 +42,8 @@ Do **not** install this checkout as an active Pi package in normal use. Loading 
 | Install safety | `--dry-run` preview, `--backup`, and `--revert <backup-dir>` |
 | Sync | `pi-setup-sync` copies live `~/.pi/agent` resources back to this repo, commits, and pushes |
 | Extensions | welcome header, context breakdown, file-change review, safety guard, custom footer, local model manager |
-| Config examples | Safe `settings.example.json` and `mcp.example.json` without personal provider/model choices |
+| Config examples | Safe `settings.example.json`, `mcp.example.json`, and `playwright-mcp.json` without personal provider/model choices |
+| Browser automation | Playwright MCP server for interactive UAT, with a maximized window config and a `browser-uat` skill |
 | Themes | `nebula-pulse`, `opencode`, `tokyo-night`, `one-dark-pro`, and more |
 | Skills | Portable backups of installed Pi/agent skills |
 | Smoke test | Docker restore/sync contract test in `tests/docker-e2e.sh` |
@@ -71,7 +72,7 @@ Do **not** install this checkout as an active Pi package in normal use. Loading 
   - `rose-pine`
   - `synthwave-84`
 - `skills/` — versioned portable copies of installed Pi skills
-  - diagnose, find-docs, find-skills, grill-me, grill-with-docs, handoff, hf-cli, improve-codebase-architecture, mcp-code-search, teach, write-a-skill
+  - browser-uat, diagnose, find-docs, find-skills, grill-me, grill-with-docs, handoff, hf-cli, improve-codebase-architecture, mcp-code-search, teach, write-a-skill
 - `config/` — safe example config files
 
 ## Set up from GitHub on a machine
@@ -315,7 +316,103 @@ This repo currently includes these Pi customizations.
 - advisor tool
 - spinner, rewind, `/btw`, and fff search
 
-`config/mcp.example.json` currently configures the remote grep MCP server.
+`config/mcp.example.json` configures two MCP servers: the remote grep server and the
+Playwright browser server. See [Browser automation](#browser-automation-playwright-mcp).
+
+## Browser automation (Playwright MCP)
+
+Interactive browser UAT: navigating, clicking, filling forms, reading console and
+network activity, and taking screenshots of a real browser. This is for manual
+testing and debugging, not for authoring CI test suites.
+
+### What is configured
+
+`config/mcp.example.json` registers the server:
+
+```json
+"playwright": {
+  "command": "npx",
+  "args": [
+    "-y", "@playwright/mcp@0.0.84",
+    "--isolated",
+    "--config", "~/.pi/agent/playwright-mcp.json"
+  ]
+}
+```
+
+`config/playwright-mcp.json` opens a maximized window:
+
+```json
+{
+  "browser": {
+    "launchOptions": { "args": ["--start-maximized", "--ozone-platform=x11"] },
+    "contextOptions": { "viewport": null }
+  }
+}
+```
+
+- The version is pinned so the tool surface is reproducible. Bump it deliberately.
+- `--isolated` keeps the browser profile in memory and never touches your real
+  browser profile. Logins therefore do not persist between restarts.
+- `viewport: null` is required for maximize to mean anything; otherwise Playwright
+  pins a fixed viewport inside a default-sized window.
+- `--ozone-platform=x11` is required for system Chrome to honour
+  `--start-maximized` under KDE/KWin Wayland. Without it the window opens at
+  roughly half width. Trade-off: the browser renders through XWayland, so usable
+  width is the panel-respecting `1884x1200` rather than native `1920x1200`. At
+  100% scale this is invisible; on HiDPI setups prefer the pinned browser below.
+- `install.sh --copy-config` copies both files. Pi expands the leading `~/` in the
+  `--config` argument, so the entry stays machine-independent.
+
+### Verify the setup
+
+```bash
+pi mcp list          # expect: playwright: connected, <n> tools
+```
+
+Inside Pi, a newly added server is only callable after `/reload` (or a new
+session). `install.sh` prints advisory notes when `npx`, a browser, or a display
+is missing; it never installs anything for you.
+
+The first `npx` run downloads the server package, so the first connection is
+slow. If your machine has no display, add `--headless` to the args.
+
+### Using it
+
+The `browser-uat` skill carries the operating procedure: build a QA inventory
+first, act from `browser_snapshot` refs, verify with console/network evidence,
+and screenshot anything visual. Two sharp edges are worth repeating:
+
+- `browser_take_screenshot` **requires** a `scale` argument (`"css"` or
+  `"device"`), even though the schema claims a default.
+- Snapshots and screenshots are written to `./.playwright-mcp/` (gitignored).
+  With a maximized window they are ~1900px wide; use `browser_resize` while
+  iterating.
+
+### Known limitation: focus
+
+The window takes keyboard focus when it opens. Wayland does not let an
+application place its own window or decline focus, so neither `--window-position`
+nor `--kiosk` helps (both are ignored here). Options:
+
+- KDE: set *Focus stealing prevention* to none/high and optionally *Keep below*
+  for Chrome in System Settings.
+- Any machine: run the server with `--headless` and rely on screenshots and
+  snapshots.
+
+### Optional: pinned browser instead of system Chrome
+
+The default uses your installed Chrome. For a fully reproducible browser that
+maximizes natively on Wayland (no `--ozone-platform=x11`):
+
+```bash
+npx @playwright/mcp@0.0.84 install-browser chrome-for-testing   # ~150 MB, one time
+```
+
+Then change the args to `"--isolated", "--browser", "chromium", "--config", ...`
+and drop `--ozone-platform=x11` from `playwright-mcp.json`. Trade-off: UAT then
+runs against a Playwright-managed Chromium build rather than the browser you
+actually use.
 
 ## Useful Pi commands
 
