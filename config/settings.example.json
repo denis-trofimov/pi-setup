@@ -32,7 +32,8 @@
     "npm:@juicesharp/rpiv-btw",
     "npm:@ff-labs/pi-fff"
   ],
-  "defaultModel": "routerai/deepseek/deepseek-v4.1-flash-1017",
+  "defaultProvider": "routerai",
+  "defaultModel": "deepseek/deepseek-v4.1-flash-1017",
   "defaultThinkingLevel": "high",
   "hideThinkingBlock": true,
   "skills": [

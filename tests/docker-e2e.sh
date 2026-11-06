@@ -169,11 +169,13 @@ if grep -q "pi-setup" /root/.pi/agent/settings.json; then
   cat /root/.pi/agent/settings.json >&2
   exit 1
 fi
-if grep -Eq '"(defaultProvider|defaultModel|enabledModels)"' /root/.pi/agent/settings.json; then
-  echo "error: example settings should not contain personal model/provider selections" >&2
+if grep -Eq '"enabledModels"' /root/.pi/agent/settings.json; then
+  echo "error: example settings should not contain machine-specific enabledModels" >&2
   cat /root/.pi/agent/settings.json >&2
   exit 1
 fi
+grep -q '"defaultProvider"' /root/.pi/agent/settings.json
+grep -q '"defaultModel"' /root/.pi/agent/settings.json
 
 grep -q "\"extensions\": \[\]" package.json
 grep -q "\"skills\": \[\]" package.json

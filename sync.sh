@@ -273,10 +273,12 @@ repo_root = Path(sys.argv[3]).resolve()
 
 data = json.loads(src.read_text())
 
-# Keep the checked-in example portable. Local model/provider selections are
-# machine-specific and can produce noisy "No models match pattern" warnings for
-# anyone restoring this repo before configuring their own providers.
-for key in ("defaultProvider", "defaultModel", "enabledModels"):
+# Keep the checked-in example portable. The pinned startup model
+# (defaultProvider + defaultModel) is intentionally kept so a restore reproduces
+# the same startup model; Pi falls back to the first authenticated model when the
+# provider is not configured. enabledModels patterns are machine-specific and can
+# produce noisy "No models match pattern" warnings, so they stay local-only.
+for key in ("enabledModels",):
     if key in data:
         data.pop(key)
         print(f"settings ok: removed local-only {key}")

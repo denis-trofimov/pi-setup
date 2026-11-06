@@ -130,7 +130,7 @@ Useful installer options:
 
 `--backup` saves current `extensions`, `themes`, `skills`, `settings.json`, and `mcp.json` under `~/.pi/agent/backups/pi-setup-*` before replacing anything. Revert with the exact command printed at the end of install.
 
-The example settings intentionally do **not** include personal model/provider selections (`defaultProvider`, `defaultModel`, or `enabledModels`). Configure your own models after restore; otherwise Pi may warn about model IDs that only exist on someone else's machine.
+The example settings pin the startup model with `defaultProvider` + `defaultModel` (both are required — `defaultModel` is the bare model id, not `provider/model`). If that provider is not configured on your machine, Pi falls back to the first authenticated model. `enabledModels` is intentionally **not** included: those patterns are machine-specific and can produce noisy "No models match pattern" warnings for anyone restoring this repo before configuring their own providers.
 
 Warnings:
 
