@@ -37,7 +37,15 @@
   "defaultThinkingLevel": "high",
   "hideThinkingBlock": true,
   "skills": [
-    "+skills/find-skills/SKILL.md"
+    "+skills/find-skills/SKILL.md",
+    "-skills/safety-guard"
   ],
-  "defaultProjectTrust": "always"
+  "defaultProjectTrust": "always",
+  "extensions": [
+    "-builtin:mcp",
+    "-extensions/safety-guard.ts"
+  ],
+  "defaultTools": [
+    "+codemode"
+  ]
 }
