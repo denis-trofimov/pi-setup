@@ -72,7 +72,7 @@ Do **not** install this checkout as an active Pi package in normal use. Loading 
   - `rose-pine`
   - `synthwave-84`
 - `skills/` — versioned portable copies of installed Pi skills
-  - browser-uat, codebase-design, diagnosing-bugs, find-docs, find-skills, grill-me, grill-with-docs, grilling, handoff, hf-cli, improve-codebase-architecture, mcp-code-search, redmine-cli, safety-guard, teach, write-a-skill
+  - browser-uat, codebase-design, diagnosing-bugs, domain-modeling, find-docs, find-skills, grill-me, grill-with-docs, grilling, handoff, hf-cli, improve-codebase-architecture, mcp-code-search, redmine-cli, safety-guard, teach, write-a-skill
 - `config/` — safe example config files
 
 ## Set up from GitHub on a machine
