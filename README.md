@@ -72,7 +72,7 @@ Do **not** install this checkout as an active Pi package in normal use. Loading 
   - `rose-pine`
   - `synthwave-84`
 - `skills/` — versioned portable copies of installed Pi skills
-  - browser-uat, diagnose, find-docs, find-skills, grill-me, grill-with-docs, handoff, hf-cli, improve-codebase-architecture, mcp-code-search, teach, write-a-skill
+  - browser-uat, codebase-design, diagnosing-bugs, find-docs, find-skills, grill-me, grill-with-docs, grilling, handoff, hf-cli, improve-codebase-architecture, mcp-code-search, redmine-cli, safety-guard, teach, write-a-skill
 - `config/` — safe example config files
 
 ## Set up from GitHub on a machine
@@ -233,7 +233,7 @@ Non-interactive options:
 
 ```bash
 pi-setup-sync --all-skills
-pi-setup-sync --skills hf-cli,diagnose "Back up selected skills"
+pi-setup-sync --skills hf-cli,diagnosing-bugs "Back up selected skills"
 pi-setup-sync --no-skills "Skip skill backup"
 ```
 

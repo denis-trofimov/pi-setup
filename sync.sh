@@ -8,7 +8,7 @@ set -euo pipefail
 #   ./sync.sh --no-push "Commit only"
 #   ./sync.sh --dry-run
 #   ./sync.sh --all-skills
-#   ./sync.sh --skills hf-cli,diagnose
+#   ./sync.sh --skills hf-cli,diagnosing-bugs
 
 SCRIPT_SOURCE="${BASH_SOURCE[0]}"
 while [[ -L "$SCRIPT_SOURCE" ]]; do
