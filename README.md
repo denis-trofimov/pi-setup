@@ -266,6 +266,10 @@ This repo currently includes these Pi customizations.
 - Uses `PI_REAL_BIN=/path/to/pi` if Pi is installed somewhere unusual.
 - `extensions/flow-title.ts` replaces the startup header with a themed Pi logo, version, active model, cwd, key hints, and project name.
 
+### Transcript rendering
+
+- `extensions/collapse-bash.ts` overrides the built-in `bash` renderers so each shell call takes one line: `$ npm test ✓ 0.8s` (or `✗` on failure). `Ctrl+O` still expands the full output.
+
 ### Commands added by extensions
 
 ```txt
