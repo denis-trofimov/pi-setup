@@ -130,6 +130,32 @@ redmine issues close <id>
 
 After create: give the user the issue URL.
 
+### Create: never twice (это уже ловили)
+
+`POST /issues.json` returns `{"issue": {"id": ...}}`. Two traps produce duplicate issues, and both were live in past sessions:
+
+- Parsing the response with a top-level projection (`jq '{id, subject}'`) yields `null` for both, because everything is nested under `.issue`. `id: null` then reads like "create failed".
+- `curl -sS` exits **0** on HTTP 500 as well as 200, so a Textile 500 looks like a successful empty response.
+
+Rule: **a missing id means UNKNOWN, not failure.** The issue may already exist. Never re-POST the same payload. Look it up first:
+
+```bash
+redmine issues list --status "*" --limit 25 -o json \
+  --filter "subject=~<distinctive fragment of the subject>" \
+  | jq -c '.[] | {id, created_on, subject}'
+```
+
+Prefer the guard in `scripts/create-issue.sh`: it refuses when an issue with the exact subject already exists, POSTs through `redmine api` (which exits non-zero on 4xx/5xx, unlike curl), tolerates a nested or missing id, and on an ambiguous response looks the issue up and prints its id instead of creating a second one. Exit codes: 0 created or recovered, 2 already exists, 3 ambiguous, 4 genuinely failed.
+
+```bash
+jq -n --rawfile desc /tmp/desc.textile \
+  '{issue:{project_id:5,tracker_id:1,subject:"…",description:$desc,tag_list:["Калькулятор-API"]}}' \
+  > /tmp/payload.json
+~/.agents/skills/redmine-cli/scripts/create-issue.sh /tmp/payload.json   # prints the id
+```
+
+If you must shell out to curl, always pass `-f` (`--fail-with-body`) so HTTP errors are loud, and print `REDMINE_SERVER` before the call so a stub/local server mix-up is visible.
+
 ### Ambiguous tracker/status/priority
 
 1. `redmine trackers list -o json` / `statuses list` / etc.
@@ -152,25 +178,23 @@ Plugin: **redmineup_tags** (`issue[tag_list]`). CLI has **no** `--tag` flag — 
 {"issue": {"tag_list": ["Калькулятор-API"]}}
 ```
 
-Create with tag (and optional parent/assignee) in one request:
+Create with tag (and optional parent/assignee) in one request. Build the body with `jq`, then let the guard create it once:
 
 ```bash
 eval "$(grep -E '^export REDMINE_' "$HOME/.profile")"
-curl -sS -X POST -H "X-Redmine-API-Key: ${REDMINE_API_KEY}" \
-  -H "Content-Type: application/json" \
-  -d '{"issue":{
-    "project_id":5,"tracker_id":2,"subject":"…",
-    "parent_issue_id":11301,"assigned_to_id":127,"priority_id":3,
-    "tag_list":["Калькулятор-API"],
-    "description":"…"
-  }}' \
-  "${REDMINE_SERVER}/issues.json"
+jq -n --rawfile desc /tmp/desc.textile '{"issue":{
+  "project_id":5,"tracker_id":2,"subject":"…","description":$desc,
+  "parent_issue_id":11301,"assigned_to_id":127,"priority_id":3,
+  "tag_list":["Калькулятор-API"]}}' > /tmp/payload.json
+~/.agents/skills/redmine-cli/scripts/create-issue.sh /tmp/payload.json
 ```
+
+`redmine api /issues.json -X POST --input /tmp/payload.json` is the raw equivalent: same body, and it exits non-zero on HTTP errors. Do not hand-roll `curl -sS` here; without `-f` it reports success on a 500.
 
 Update tags on an existing issue (HTTP **204** on success):
 
 ```bash
-curl -sS -o /dev/null -w '%{http_code}\n' -X PUT \
+curl -sSf -o /dev/null -w '%{http_code}\n' -X PUT \
   -H "X-Redmine-API-Key: ${REDMINE_API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{"issue":{"tag_list":["Калькулятор-API"]}}' \
