@@ -74,6 +74,7 @@ Do **not** install this checkout as an active Pi package in normal use. Loading 
 - `skills/` — versioned portable copies of installed Pi skills
   - browser-uat, codebase-design, diagnosing-bugs, domain-modeling, find-docs, find-skills, grill-me, grill-with-docs, grilling, handoff, hf-cli, improve-codebase-architecture, mcp-code-search, redmine-cli, safety-guard, teach, write-a-skill
   - ask-matt, code-review, implement, implement-spec, pr, prototype, research, retro, setup-matt-pocock-skills, tdd, to-questionnaire, to-spec, to-tickets, triage, wait-what, wayfinder, wizard, writing-for-agents
+  - local additions, not in upstream `mattpocock/skills`: `skills/setup-matt-pocock-skills/issue-tracker-redmine.md` (a Redmine backend for the tracker skills) and its `## Local addition` section in that skill's `SKILL.md`
 - `config/` — safe example config files
 
 ## Set up from GitHub on a machine
