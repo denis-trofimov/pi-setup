@@ -55,6 +55,7 @@ bash /tmp/redmine-install.sh
 - Versions: prefer `redmine versions list --open` before assigning.
 - On failure twice: stop, run `--help`, ask the user — do not invent flags.
 - **Описания и notes — только Textile** (не Markdown). Нарушение → HTML **500** при живой странице, API при этом часто **200** (см. ниже).
+- **Роль не умеет удалять задачи и не умеет удалять/править notes** (см. [Deleting: what this role cannot do](#deleting-what-this-role-cannot-do)). Не пробуй, не ищи обход, не проси пользователя «удалить в веб-интерфейсе».
 
 ## Description / notes (Textile) — частая причина HTML 500
 
@@ -100,6 +101,37 @@ curl -sS -o /dev/null -w '%{http_code}\n' \
 2. Сначала проверь `tag_list` (массив строк — см. ниже).
 3. Затем описание: убери `()` из `@...@`, замени Markdown `**`/`*(...)*` на Textile, выровняй пары `@`.
 4. `PUT` description → снова проверь HTML **200**. Новых задач не создавать.
+
+## Deleting: what this role cannot do
+
+Verified on this server (2026-11-08, issue #15449): the API key's role has **no issue-delete permission**, and the CLI has **no note/journal delete or edit at all** (`issues comment` can only add; there is no `notes`, `journal` or `comment delete` subcommand). Plan around that instead of discovering it mid-task.
+
+### Deleting an issue
+
+`redmine issues delete <id> --force` fails with:
+
+```text
+Error: Permission denied: you don't have the required permissions for this action. Check your Redmine role permissions or contact your administrator.
+```
+
+That is a permission wall, not a transient failure: do not retry it, do not try `--profile`, do not ask the user to fix the role for this.
+
+Junk cleanup that does work, and is what to use when you created something by mistake (test issue, wrong duplicate, abandoned draft):
+
+```bash
+redmine issues update <id> --status "Отклонена" \
+  --note "Создана по ошибке при <контекст>. Junk, работу по ней не ведём; права на удаление у роли нет."
+```
+
+`Отклонена` is a closed status here, so the issue drops out of open-issue lists and reports. Report the id, the new status and the reason; that is the end of it.
+
+### Notes (comments)
+
+Never propose deleting a note, and never state that something can be deleted in the web interface: whether the UI would allow it is not something this skill can know, and passing that job to the user is misleading. The CLI cannot remove a journal entry, so a wrong or junk note stays on the issue.
+
+- Wrong note that affects the work: post a **corrective note** (`redmine issues comment <id> -m "Уточнение к предыдущему: …"`) instead of trying to remove it.
+- Junk note with no bearing on the task (a stray command echo, a duplicated status line): leave it alone.
+- Only raise a note with the user when it would mislead whoever reads the issue's history later, that is, when it is critical to understanding the work done on the task, and then say it cannot be removed rather than asking them to delete it.
 
 ## Common workflows
 
