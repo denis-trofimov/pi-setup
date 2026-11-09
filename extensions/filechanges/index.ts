@@ -122,7 +122,7 @@ function buildWidgetLines(tracked: Map<string, TrackedFile>, theme?: any, expand
 		}
 		const files = `${items.length} file${items.length === 1 ? "" : "s"}`;
 		if (!theme) {
-			return [`Δ ${files} (+${added}/-${removed})  ctrl+shift+d`];
+			return [`Δ ${files} (+${added}/-${removed})  ctrl+alt+d`];
 		}
 		const plus = added === 0 ? theme.fg("text", `+${added}`) : theme.fg("success", `+${added}`);
 		const minus = removed === 0 ? theme.fg("text", `-${removed}`) : theme.fg("error", `-${removed}`);
@@ -133,7 +133,7 @@ function buildWidgetLines(tracked: Map<string, TrackedFile>, theme?: any, expand
 				theme.fg("text", "/") +
 				minus +
 				theme.fg("text", ")") +
-				theme.fg("dim", "  ctrl+shift+d"),
+				theme.fg("dim", "  ctrl+alt+d"),
 		];
 	}
 
@@ -399,7 +399,8 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	// Commands
-	pi.registerShortcut("ctrl+shift+d", {
+	// ctrl+shift+d is reserved by pi-tui (global debug dump, handled before any component).
+	pi.registerShortcut("ctrl+alt+d", {
 		description: "Collapse/expand the filechanges diff widget",
 		handler: async (ctx) => {
 			widgetExpanded = !widgetExpanded;
