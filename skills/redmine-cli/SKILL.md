@@ -57,6 +57,7 @@ bash /tmp/redmine-install.sh
 - On failure twice: stop, run `--help`, ask the user — do not invent flags.
 - **Описания и notes — только Textile** (не Markdown). Нарушение → HTML **500** при живой странице, API при этом часто **200** (см. ниже).
 - **Роль не умеет удалять задачи и не умеет удалять/править notes** (см. [Deleting: what this role cannot do](#deleting-what-this-role-cannot-do)). Не пробуй, не ищи обход, не проси пользователя «удалить в веб-интерфейсе».
+- **Пробные и черновые задачи запрещены.** Не создавай задачу «на проверку» — ни чтобы узнать следующий номер, ни чтобы проверить флаги, ни чтобы «посмотреть, как ответит API». Темы вида `probe`, `test`, `проверка`, `tmp`, `draft`, `черновик` — это пробный объект, а не работа. Номер следующей задачи — только чтением: `redmine issues list --status "*" --sort id:desc --limit 1 -o json | jq -r '.[0].id'`. Id созданной — из ответа: `redmine issues create … -o json | jq -r '.id'`; **`tail`/`head` на этом выводе запрещены** — они срезают поле `id`, и дальше хочется «измерить» номер созданием. Если id потерян — найди задачу чтением (`--filter "subject=~…"`), не создавай вторую. Создание, изменение и удаление задач — только по явному поручению пользователя.
 
 ## Verified flags (CLI v2.11.0)
 
@@ -201,6 +202,19 @@ Rule: **a missing id means UNKNOWN, not failure.** The issue may already exist. 
 redmine issues list --status "*" --limit 25 -o json \
   --filter "subject=~<distinctive fragment of the subject>" \
   | jq -c '.[] | {id, created_on, subject}'
+```
+
+**Never "measure" the next id by creating a probe issue.** The id of the issue you just created is in the create response — read it, do not truncate it:
+
+```bash
+redmine issues create … -o json | jq -r '.id'      # correct
+redmine issues create … -o json | tail -20         # forbidden: cuts the id off
+```
+
+If the id is already lost, get the next number read-only — never by creating a throwaway issue:
+
+```bash
+redmine issues list --status "*" --sort id:desc --limit 1 -o json | jq -r '.[0].id'
 ```
 
 Prefer the guard in `scripts/create-issue.sh`: it refuses when an issue with the exact subject already exists, POSTs through `redmine api` (which exits non-zero on 4xx/5xx, unlike curl), tolerates a nested or missing id, and on an ambiguous response looks the issue up and prints its id instead of creating a second one. Exit codes: 0 created or recovered, 2 already exists, 3 ambiguous, 4 genuinely failed.

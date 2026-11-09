@@ -340,6 +340,10 @@ if [[ "$COPY_CONFIG" == "1" ]]; then
   if [[ -f "$ROOT/config/playwright-mcp.json" ]]; then
     copy_path "$ROOT/config/playwright-mcp.json" "$PI_HOME/playwright-mcp.json"
   fi
+  if [[ -f "$ROOT/config/rpiv-todo.json" ]]; then
+    # Lives outside the Pi home: rpiv-todo resolves $XDG_CONFIG_HOME/rpiv-todo/config.json.
+    copy_path "$ROOT/config/rpiv-todo.json" "${XDG_CONFIG_HOME:-$HOME/.config}/rpiv-todo/config.json"
+  fi
   remove_legacy_package_reference
 else
   echo "Skipping config copy. To copy settings/mcp examples, run: ./install.sh --copy-config"

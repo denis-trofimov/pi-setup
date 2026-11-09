@@ -375,7 +375,7 @@ cd "$ROOT"
 
 if [[ "$DRY_RUN" == "1" ]]; then
   echo "Dry run: would sync from $PI_HOME into $ROOT"
-  echo "Files that may change: extensions/, themes/, skills/, config/settings.example.json, config/mcp.example.json"
+  echo "Files that may change: extensions/, themes/, skills/, config/settings.example.json, config/mcp.example.json, config/rpiv-todo.json"
   exit 0
 fi
 
@@ -389,10 +389,17 @@ copy_settings_example
 if [[ -f "$PI_HOME/mcp.json" ]]; then
   cp "$PI_HOME/mcp.json" "$ROOT/config/mcp.example.json"
 fi
+RPIV_TODO_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/rpiv-todo/config.json"
+if [[ -f "$RPIV_TODO_CONFIG" ]]; then
+  cp "$RPIV_TODO_CONFIG" "$ROOT/config/rpiv-todo.json"
+fi
 
 validate_json "$ROOT/package.json" "$ROOT/config/settings.example.json"
 if [[ -f "$ROOT/config/mcp.example.json" ]]; then
   validate_json "$ROOT/config/mcp.example.json"
+fi
+if [[ -f "$ROOT/config/rpiv-todo.json" ]]; then
+  validate_json "$ROOT/config/rpiv-todo.json"
 fi
 validate_json "$ROOT"/themes/*.json
 validate_themes

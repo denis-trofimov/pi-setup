@@ -39,6 +39,16 @@ SUBJECT="$(jq -r '.issue.subject // empty' "$PAYLOAD")"
 [ -n "$SUBJECT" ] || { echo "payload has no .issue.subject" >&2; exit 64; }
 PROJECT="$(jq -r '.issue.project_id // empty' "$PAYLOAD")"
 
+# Probe/throwaway issues are forbidden: they pollute the tracker and this role
+# cannot delete them. The next id is a read-only query, not a create.
+# See "Create: never twice" in SKILL.md.
+if printf '%s' "$SUBJECT" | grep -qiE '^(probe|test|проверка|tmp|draft|черновик)([^[:alnum:]]|$)'; then
+  echo "refusing to create a probe/throwaway issue: $SUBJECT" >&2
+  echo "probe issues are forbidden; learn the next id read-only:" >&2
+  echo "  redmine issues list --status \"*\" --sort id:desc --limit 1 -o json | jq -r '.[0].id'" >&2
+  exit 2
+fi
+
 # Redmine's subject filter escapes these; keep the needle boring.
 NEEDLE="$(printf '%s' "$SUBJECT" | sed 's/[][\\.*?^$()+{}|]/ /g' | cut -c1-40)"
 
