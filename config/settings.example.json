@@ -41,11 +41,17 @@
     "-skills/safety-guard"
   ],
   "defaultProjectTrust": "always",
+  "extensionChangelogVersions": {
+    "{\"source\":\"npm:pi-mcp-adapter\",\"scope\":\"user\"}": "7.0.1",
+    "{\"source\":\"npm:@narumitw/pi-goal\",\"scope\":\"user\"}": "0.54.15",
+    "{\"source\":\"npm:@dustydonkey/pi-spinner\",\"scope\":\"user\"}": "1.0.2"
+  },
   "extensions": [
     "-builtin:mcp",
     "-extensions/safety-guard.ts"
   ],
   "defaultTools": [
     "+codemode"
-  ]
+  ],
+  "showCacheMissNotices": true
 }

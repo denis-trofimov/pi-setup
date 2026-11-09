@@ -13,6 +13,17 @@
         "~/.pi/agent/playwright-mcp.json"
       ],
       "description": "Drive a real Chromium browser: navigate, click, type, snapshot pages, screenshots, console/network"
+    },
+    "sonar": {
+      "command": "~/.local/bin/sonar-mcp",
+      "args": [
+        "--content",
+        "code",
+        "docs"
+      ],
+      "exposure": "direct",
+      "timeout": 120,
+      "description": "Local semantic code search over any repo path: search (by intent or symbol) and find_related (similar chunks). No cloud, no API key."
     }
   }
 }

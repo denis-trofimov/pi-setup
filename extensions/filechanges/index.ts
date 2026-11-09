@@ -106,11 +106,36 @@ function formatStatus(tracked: Map<string, TrackedFile>, theme?: any): string | 
 	return theme.fg("muted", `Δ ${edited}  + ${created}`);
 }
 
-function buildWidgetLines(tracked: Map<string, TrackedFile>, theme?: any): string[] | undefined {
+function buildWidgetLines(tracked: Map<string, TrackedFile>, theme?: any, expanded = false): string[] | undefined {
 	if (tracked.size === 0) return undefined;
 	const items = [...tracked.values()].sort((a, b) => b.updatedAt - a.updatedAt);
 	const max = 8;
 	const lines: string[] = [];
+
+	if (!expanded) {
+		// Collapsed: one summary line. Toggle with the filechanges-widget shortcut.
+		let added = 0;
+		let removed = 0;
+		for (const t of items) {
+			added += t.added;
+			removed += t.removed;
+		}
+		const files = `${items.length} file${items.length === 1 ? "" : "s"}`;
+		if (!theme) {
+			return [`Δ ${files} (+${added}/-${removed})  ctrl+shift+d`];
+		}
+		const plus = added === 0 ? theme.fg("text", `+${added}`) : theme.fg("success", `+${added}`);
+		const minus = removed === 0 ? theme.fg("text", `-${removed}`) : theme.fg("error", `-${removed}`);
+		return [
+			theme.fg("muted", `Δ ${files} `) +
+				theme.fg("text", "(") +
+				plus +
+				theme.fg("text", "/") +
+				minus +
+				theme.fg("text", ")") +
+				theme.fg("dim", "  ctrl+shift+d"),
+		];
+	}
 
 	// Separator between chat history and this widget (widget renders above the editor).
 	//const sep = "─".repeat(60);
@@ -197,11 +222,14 @@ export default function (pi: ExtensionAPI) {
 	// Per-tool-call snapshot, only committed on successful tool_result
 	const pendingByToolCallId = new Map<string, PendingSnapshot>();
 
+	// Widget starts collapsed to a single summary line.
+	let widgetExpanded = false;
+
 	function updateUi(ctx: any) {
 		if (!ctx?.hasUI) return;
 
 		ctx.ui.setStatus("filechanges", formatStatus(tracked, ctx.ui.theme));
-		ctx.ui.setWidget("filechanges", buildWidgetLines(tracked, ctx.ui.theme));
+		ctx.ui.setWidget("filechanges", buildWidgetLines(tracked, ctx.ui.theme, widgetExpanded));
 	}
 
 	async function recomputeTrackedFile(ctx: any, relPath: string) {
@@ -371,6 +399,14 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	// Commands
+	pi.registerShortcut("ctrl+shift+d", {
+		description: "Collapse/expand the filechanges diff widget",
+		handler: async (ctx) => {
+			widgetExpanded = !widgetExpanded;
+			updateUi(ctx);
+		},
+	});
+
 	pi.registerCommand("filechanges", {
 		description: "Show files changed by pi and inspect diffs",
 		handler: async (_args, ctx) => {
@@ -387,7 +423,7 @@ export default function (pi: ExtensionAPI) {
 					return;
 				}
 				// Non-interactive: just print a summary to stdout
-				const lines = buildWidgetLines(tracked) ?? [];
+				const lines = buildWidgetLines(tracked, undefined, true) ?? [];
 				console.log(lines.join("\n"));
 				return;
 			}

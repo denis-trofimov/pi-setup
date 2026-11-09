@@ -30,7 +30,7 @@ eval "$(grep -E '^export REDMINE_' "$HOME/.profile")"
 # eval "$(grep -E '^export REDMINE_' "$HOME/.bashrc")"
 ```
 
-Smoke check: `redmine my-account get -o json` (expect 200 / user object).
+Smoke check: `redmine --version` (флаг верхнего уровня, **не** подкоманда `redmine version` — её нет) и `redmine my-account get -o json` (expect 200 / user object).
 
 **Never** print, log, or paste `REDMINE_API_KEY` or `api_key` from JSON responses. Redact if quoting output.
 
@@ -53,9 +53,34 @@ bash /tmp/redmine-install.sh
 - `issues update` sends **only** flags you pass.
 - Dates: `--due-date`, `--from`, `--to` accept literal `today`.
 - Versions: prefer `redmine versions list --open` before assigning.
+- **Не угадывай флаги.** У `comment`, `update` и `close` разные схемы (см. [Verified flags](#verified-flags-cli-v2110)); один неверный флаг = ошибка `unknown flag` и потерянный вызов. Если флаг отвалился — `redmine <cmd> --help`, поправь себя и (если скилл врал) сразу поправь этот файл.
 - On failure twice: stop, run `--help`, ask the user — do not invent flags.
 - **Описания и notes — только Textile** (не Markdown). Нарушение → HTML **500** при живой странице, API при этом часто **200** (см. ниже).
 - **Роль не умеет удалять задачи и не умеет удалять/править notes** (см. [Deleting: what this role cannot do](#deleting-what-this-role-cannot-do)). Не пробуй, не ищи обход, не проси пользователя «удалить в веб-интерфейсе».
+
+## Verified flags (CLI v2.11.0)
+
+Сверено с `redmine <cmd> --help` на этом сервере (2026-11-08, #15450). Самая частая ошибка — переносить `--note` из `update` в `comment`: у `comment` его **нет**, там `-m`.
+
+| Задача | Команда | Проверенные флаги |
+| --- | --- | --- |
+| Добавить заметку | `issues comment <id>` | `-m`, `--message` (только это) |
+| Изменить поля/добавить note | `issues update <id>` | `--note`, `--private-notes`, `--status`, `--assignee`, `--description`, `--custom-field`, `--attach`, `--due-date`, `--estimated-hours`, `--done-ratio` |
+| Закрыть | `issues close <id>` | `--note` |
+| Читать | `issues get <id>` | `--journals`, `--attachments`, `--relations`, `--children`, `--download-attachments <dir>`, `--include journals,children,relations,attachments` |
+| Список/поиск | `issues list` | `--project`, `--status`, `--assignee`, `--author`, `--priority`, `--parent`, `--category`, `--query`, `--query-id`, `--filter key=value`, `--sort`, `--limit 0` |
+| Скачать вложение | `attachments download <id>` | `-d`/`--dir`, `--path` (в т.ч. `--path -` в stdout) — **не** `-o` |
+| Учесть время | `time log` | `--issue`, `--hours` (обязателен), `--activity`, `--date`, `--comment`, `--project`, `--user` |
+| Версии | `versions list` | `--project` (обязателен), `--open`, `--closed`, `--locked`, `--status` |
+| Сырой API | `api /issues.json` | `-X`, `--input <file>`, `-F`/`--raw-field` (тело), `-f`/`--field` (query), `-i`, `--silent` |
+
+Глобальные: `-k/--api-key`, `-s/--server`, `-o/--output`, `--profile`, `--read-only` (страховка от случайной записи; также `REDMINE_READ_ONLY=1`), `-v/--verbose`.
+
+Ловушки, на которых уже спотыкались:
+
+* `issues comment <id> --notes "..."` → `Error: unknown flag: --notes`. Правильно: `-m`.
+* `attachments download -o json` — это формат подтверждения, а не путь; файл кладётся в `--dir`/`--path`.
+* `redmine version` → `unknown command`; версия смотрится через `redmine --version`.
 
 ## Description / notes (Textile) — частая причина HTML 500
 
@@ -156,7 +181,8 @@ redmine search "<query>" -o json
 ```bash
 redmine issues create --project <p> --subject "..." --tracker <t> -o json
 redmine issues update <id> --status "<name>"   # only changed fields
-redmine issues comment <id> --notes "..."
+redmine issues comment <id> -m "..."          # note; у comment нет --note/--notes
+redmine issues comment <id> -m "$(cat note.textile)"
 redmine issues close <id>
 ```
 
@@ -183,7 +209,7 @@ Prefer the guard in `scripts/create-issue.sh`: it refuses when an issue with the
 jq -n --rawfile desc /tmp/desc.textile \
   '{issue:{project_id:5,tracker_id:1,subject:"…",description:$desc,tag_list:["Калькулятор-API"]}}' \
   > /tmp/payload.json
-~/.agents/skills/redmine-cli/scripts/create-issue.sh /tmp/payload.json   # prints the id
+~/.pi/agent/skills/redmine-cli/scripts/create-issue.sh /tmp/payload.json   # prints the id
 ```
 
 If you must shell out to curl, always pass `-f` (`--fail-with-body`) so HTTP errors are loud, and print `REDMINE_SERVER` before the call so a stub/local server mix-up is visible.
@@ -218,7 +244,7 @@ jq -n --rawfile desc /tmp/desc.textile '{"issue":{
   "project_id":5,"tracker_id":2,"subject":"…","description":$desc,
   "parent_issue_id":11301,"assigned_to_id":127,"priority_id":3,
   "tag_list":["Калькулятор-API"]}}' > /tmp/payload.json
-~/.agents/skills/redmine-cli/scripts/create-issue.sh /tmp/payload.json
+~/.pi/agent/skills/redmine-cli/scripts/create-issue.sh /tmp/payload.json
 ```
 
 `redmine api /issues.json -X POST --input /tmp/payload.json` is the raw equivalent: same body, and it exits non-zero on HTTP errors. Do not hand-roll `curl -sS` here; without `-f` it reports success on a 500.
