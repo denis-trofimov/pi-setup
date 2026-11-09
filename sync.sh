@@ -241,6 +241,12 @@ select_skills() {
 copy_selected_skills() {
   local dst_root="$ROOT/skills"
   local i name src kind dst selected_count=0
+  # --no-skills means "leave the repo's skills/ alone", not "delete them".
+  # Wiping here would silently drop every backed-up skill from the repo.
+  if [[ "$SKILLS_MODE" == "none" ]]; then
+    echo "Skipping skill backup (repo skills/ left untouched)"
+    return
+  fi
   mkdir -p "$dst_root"
   find "$dst_root" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
 
@@ -375,7 +381,7 @@ cd "$ROOT"
 
 if [[ "$DRY_RUN" == "1" ]]; then
   echo "Dry run: would sync from $PI_HOME into $ROOT"
-  echo "Files that may change: extensions/, themes/, skills/, config/settings.example.json, config/mcp.example.json"
+  echo "Files that may change: extensions/, themes/, skills/, config/settings.example.json, config/mcp.example.json, config/micme.example.json"
   exit 0
 fi
 
@@ -389,10 +395,16 @@ copy_settings_example
 if [[ -f "$PI_HOME/mcp.json" ]]; then
   cp "$PI_HOME/mcp.json" "$ROOT/config/mcp.example.json"
 fi
+if [[ -f "$PI_HOME/micme.json" ]]; then
+  cp "$PI_HOME/micme.json" "$ROOT/config/micme.example.json"
+fi
 
 validate_json "$ROOT/package.json" "$ROOT/config/settings.example.json"
 if [[ -f "$ROOT/config/mcp.example.json" ]]; then
   validate_json "$ROOT/config/mcp.example.json"
+fi
+if [[ -f "$ROOT/config/micme.example.json" ]]; then
+  validate_json "$ROOT/config/micme.example.json"
 fi
 validate_json "$ROOT"/themes/*.json
 validate_themes

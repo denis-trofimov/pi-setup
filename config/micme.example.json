@@ -1,0 +1,11 @@
+{
+  "$schema": "https://raw.githubusercontent.com/senad-d/micme/main/micme.schema.json",
+  "MICME_TRANSCRIBE_BACKEND": "custom",
+  "MICME_TRANSCRIBE_COMMAND": "handy --transcribe-file {audio} --json > {tempDir}/handy.json && jq -r .text {tempDir}/handy.json",
+  "MICME_RECORD_SAMPLE_RATE": "16000",
+  "MICME_SHORTCUT": "alt+m",
+  "MICME_TRANSCRIPTION_MODE": "clip",
+  "MICME_AUTO_SUBMIT": "0",
+  "MICME_VALIDATE_AUDIO": "1",
+  "MICME_KEEP_AUDIO": "0"
+}

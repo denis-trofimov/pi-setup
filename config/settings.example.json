@@ -31,7 +31,8 @@
     "npm:@ayulab/pi-rewind",
     "npm:@juicesharp/rpiv-btw",
     "npm:@ff-labs/pi-fff",
-    "npm:pi-subagents"
+    "npm:pi-subagents",
+    "npm:@senad-d/micme"
   ],
   "defaultProvider": "routerai",
   "defaultModel": "deepseek/deepseek-v4.1-flash-1017",

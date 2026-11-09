@@ -42,7 +42,8 @@ Do **not** install this checkout as an active Pi package in normal use. Loading 
 | Install safety | `--dry-run` preview, `--backup`, and `--revert <backup-dir>` |
 | Sync | `pi-setup-sync` copies live `~/.pi/agent` resources back to this repo, commits, and pushes |
 | Extensions | welcome header, context breakdown, file-change review, safety guard, custom footer, local model manager |
-| Config examples | Safe `settings.example.json`, `mcp.example.json`, and `playwright-mcp.json` without personal provider/model choices |
+| Config examples | Safe `settings.example.json`, `mcp.example.json`, `micme.example.json`, and `playwright-mcp.json` without personal provider/model choices |
+| Voice dictation | Micme wired to the local [Handy](https://handy.computer) CLI — `alt+m` to dictate, no cloud STT, no API key |
 | Browser automation | Playwright MCP server for interactive UAT, with a maximized window config and a `browser-uat` skill |
 | Themes | `nebula-pulse`, `opencode`, `tokyo-night`, `one-dark-pro`, and more |
 | Skills | Portable backups of installed Pi/agent skills |
@@ -77,6 +78,7 @@ Do **not** install this checkout as an active Pi package in normal use. Loading 
   - local additions, not in upstream `mattpocock/skills`: `skills/setup-matt-pocock-skills/issue-tracker-redmine.md` (a Redmine backend for the tracker skills) and its `## Local addition` section in that skill's `SKILL.md`
 - `config/` — safe example config files
   - `vscode-keybindings.json` — VS Code integrated-terminal bindings that forward `ctrl+alt+d` / `ctrl+shift+d` to Pi as Kitty sequences (see [VS Code terminal keys](#vs-code-terminal-keys))
+  - `micme.example.json` — Micme voice dictation wired to the local Handy CLI (see [Voice dictation](#voice-dictation-handy--micme))
 
 ## Set up from GitHub on a machine
 
@@ -129,7 +131,7 @@ Useful installer options:
 
 `--restore` copies repo resources into `~/.pi/agent/extensions`, `~/.pi/agent/themes`, and `~/.pi/agent/skills`.
 
-`--copy-config` copies `config/settings.example.json` and `config/mcp.example.json` into `~/.pi/agent/`, and merges `config/vscode-keybindings.json` into the VS Code user `keybindings.json` (existing entries and comments are preserved; a `.bak-<timestamp>` copy is written first).
+`--copy-config` copies `config/settings.example.json`, `config/mcp.example.json`, and `config/micme.example.json` into `~/.pi/agent/`, and merges `config/vscode-keybindings.json` into the VS Code user `keybindings.json` (existing entries and comments are preserved; a `.bak-<timestamp>` copy is written first).
 
 `--backup` saves current `extensions`, `themes`, `skills`, `settings.json`, and `mcp.json` under `~/.pi/agent/backups/pi-setup-*` before replacing anything. Revert with the exact command printed at the end of install.
 
@@ -215,7 +217,7 @@ Then use it from anywhere:
 pi-setup-sync
 ```
 
-`pi-setup-sync` copies current `~/.pi/agent/extensions`, `~/.pi/agent/themes`, selected skills, `settings.json`, and `mcp.json` into this repo, validates JSON/theme tokens, commits, and pushes. It strips any self-referential package entry that would make Pi load this `pi-setup` repo at startup.
+`pi-setup-sync` copies current `~/.pi/agent/extensions`, `~/.pi/agent/themes`, selected skills, `settings.json`, `mcp.json`, and `micme.json` into this repo, validates JSON/theme tokens, commits, and pushes. It strips any self-referential package entry that would make Pi load this `pi-setup` repo at startup.
 
 Syncing requires `git` and `python3`; pushing requires normal GitHub credentials for this repo.
 
@@ -326,6 +328,36 @@ This repo currently includes these Pi customizations.
 
 `config/mcp.example.json` configures two MCP servers: the remote grep server and the
 Playwright browser server. See [Browser automation](#browser-automation-playwright-mcp).
+
+## Voice dictation (Handy + Micme)
+
+`alt+m` toggles dictation inside Pi. Audio is recorded with `ffmpeg`, transcribed by the local [Handy](https://handy.computer) CLI, and appended to the focused editor for review — no cloud STT, no API key.
+
+```bash
+pi install npm:@senad-d/micme
+```
+
+`config/micme.example.json` is restored to `~/.pi/agent/micme.json` by `./install.sh --copy-config`. It sets:
+
+| Key | Value | Why |
+| --- | --- | --- |
+| `MICME_TRANSCRIBE_BACKEND` | `custom` | Use the shell command instead of whisper.cpp |
+| `MICME_TRANSCRIBE_COMMAND` | `handy --transcribe-file {audio} --json > {tempDir}/handy.json && jq -r .text {tempDir}/handy.json` | Handy's headless CLI; the `> file && jq` form surfaces Handy failures instead of returning an empty transcript (`sh -lc` is dash, so `pipefail` is unavailable) |
+| `MICME_RECORD_SAMPLE_RATE` | `16000` | Handy rejects anything but 16 kHz mono 16-bit PCM |
+| `MICME_SHORTCUT` | `alt+m` | Same binding as upstream pi-dictate |
+| `MICME_AUTO_SUBMIT` | `0` | Paste for review, never auto-send |
+
+Handy must have a model installed (`handy --list-models` marks installed ones with `✓`). Each dictation cold-loads the model (~1-2 s) because `--transcribe-file` runs a separate process from the running app.
+
+Verify the wiring without touching the mic:
+
+```bash
+cd /tmp && git clone --depth 1 https://github.com/senad-d/micme && cd micme \
+  && npm install --ignore-scripts --legacy-peer-deps \
+  && node --experimental-strip-types scripts/doctor.mjs
+```
+
+Expect `✓ effective backend: custom` and `✓ custom transcribe command: configured`. The doctor must run from a checkout, not from `node_modules` — Node refuses type-stripping there.
 
 ## Browser automation (Playwright MCP)
 

@@ -413,6 +413,9 @@ if [[ "$COPY_CONFIG" == "1" ]]; then
   if [[ -f "$ROOT/config/mcp.example.json" ]]; then
     copy_path "$ROOT/config/mcp.example.json" "$PI_HOME/mcp.json"
   fi
+  if [[ -f "$ROOT/config/micme.example.json" ]]; then
+    copy_path "$ROOT/config/micme.example.json" "$PI_HOME/micme.json"
+  fi
   if [[ -f "$ROOT/config/playwright-mcp.json" ]]; then
     copy_path "$ROOT/config/playwright-mcp.json" "$PI_HOME/playwright-mcp.json"
   fi
