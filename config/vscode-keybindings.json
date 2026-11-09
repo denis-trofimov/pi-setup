@@ -1,0 +1,14 @@
+[
+    {
+        "key": "ctrl+alt+d",
+        "command": "workbench.action.terminal.sendSequence",
+        "args": { "text": "\u001b[100;7u" },
+        "when": "terminalFocus"
+    },
+    {
+        "key": "ctrl+shift+d",
+        "command": "workbench.action.terminal.sendSequence",
+        "args": { "text": "\u001b[100;6u" },
+        "when": "terminalFocus"
+    }
+]

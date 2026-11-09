@@ -76,6 +76,7 @@ Do **not** install this checkout as an active Pi package in normal use. Loading 
   - ask-matt, code-review, implement, implement-spec, pr, prototype, research, retro, setup-matt-pocock-skills, tdd, to-questionnaire, to-spec, to-tickets, triage, wait-what, wayfinder, wizard, writing-for-agents
   - local additions, not in upstream `mattpocock/skills`: `skills/setup-matt-pocock-skills/issue-tracker-redmine.md` (a Redmine backend for the tracker skills) and its `## Local addition` section in that skill's `SKILL.md`
 - `config/` — safe example config files
+  - `vscode-keybindings.json` — VS Code integrated-terminal bindings that forward `ctrl+alt+d` / `ctrl+shift+d` to Pi as Kitty sequences (see [VS Code terminal keys](#vs-code-terminal-keys))
 
 ## Set up from GitHub on a machine
 
@@ -128,7 +129,7 @@ Useful installer options:
 
 `--restore` copies repo resources into `~/.pi/agent/extensions`, `~/.pi/agent/themes`, and `~/.pi/agent/skills`.
 
-`--copy-config` copies `config/settings.example.json` and `config/mcp.example.json` into `~/.pi/agent/`.
+`--copy-config` copies `config/settings.example.json` and `config/mcp.example.json` into `~/.pi/agent/`, and merges `config/vscode-keybindings.json` into the VS Code user `keybindings.json` (existing entries and comments are preserved; a `.bak-<timestamp>` copy is written first).
 
 `--backup` saves current `extensions`, `themes`, `skills`, `settings.json`, and `mcp.json` under `~/.pi/agent/backups/pi-setup-*` before replacing anything. Revert with the exact command printed at the end of install.
 
@@ -138,6 +139,7 @@ Warnings:
 
 - `--restore` replaces the current contents of those live resource directories.
 - `--copy-config` overwrites `~/.pi/agent/settings.json` and `~/.pi/agent/mcp.json`.
+- `--copy-config` only *adds* missing VS Code keybindings; it never rewrites or removes existing ones. Set `VSCODE_KEYBINDINGS=/path/to/keybindings.json` to target a non-default location (e.g. VS Code Insiders or a profile).
 - Use `--dry-run` first if you only want to preview the restore.
 
 ## Use your own GitHub repo
@@ -438,6 +440,31 @@ Review files changed by Pi before keeping or reverting them:
 ```
 
 In non-interactive print/json mode, accept/decline require `force`.
+
+## VS Code terminal keys
+
+Pi's TUI reserves some modified keys before any extension sees them, and the VS Code
+integrated terminal reserves some before Pi sees them. Two consequences worth knowing:
+
+- **`ctrl+shift+d` is Pi's global debug dump.** `pi-tui` handles `shift+ctrl+d` in
+  `handleTerminalInput` before the focused component, so it writes
+  `~/.pi/agent/pi-debug.log` and no extension shortcut on that key can ever fire.
+  The `filechanges` widget therefore collapses/expands on **`ctrl+alt+d`**.
+- **VS Code owns modified keys in its terminal.** `ctrl+shift+d` is the default
+  "Run and Debug" binding, so it never reaches the pty. `config/vscode-keybindings.json`
+  forwards the keys Pi needs as Kitty sequences, scoped to `terminalFocus`:
+
+  | Key | Sequence | Meaning |
+  | --- | --- | --- |
+  | `ctrl+alt+d` | `\u001b[100;7u` | `d` (100) with `ctrl+alt` (7) — toggles the filechanges widget |
+  | `ctrl+shift+d` | `\u001b[100;6u` | `d` with `ctrl+shift` (6) — Pi's debug dump |
+
+  `./install.sh --copy-config` merges these into the VS Code user `keybindings.json`
+  without touching existing entries. Outside Pi, the same keys type the raw escape
+  sequence into a plain shell — remove the bindings if that bothers you.
+
+Verify what Pi actually receives with `/hotkeys` (registered shortcuts) and by pressing
+the key: a working `ctrl+alt+d` toggles the `Δ N files (+x/-y)` line.
 
 ## Do not commit
 

@@ -9,6 +9,7 @@ set -euo pipefail
 # Usage:
 #   ./install.sh                         # install sync helper + compact launcher only
 #   ./install.sh --copy-config           # also overwrite ~/.pi/agent/settings.json and mcp.json
+#                                        # and merge config/vscode-keybindings.json into VS Code
 #   ./install.sh --restore               # also restore extensions/themes/skills from this repo
 #   ./install.sh --restore --dry-run     # preview changes without writing files
 #   ./install.sh --restore --backup      # save current live files before replacing them
@@ -60,6 +61,7 @@ used to back up that live setup to GitHub and recreate it on any machine.
 Usage:
   ./install.sh                         # install sync helper + compact launcher only
   ./install.sh --copy-config           # also overwrite ~/.pi/agent/settings.json and mcp.json
+                                       # and merge config/vscode-keybindings.json into VS Code
   ./install.sh --restore               # also restore extensions/themes/skills into ~/.pi/agent
   ./install.sh --restore --dry-run     # preview changes without writing files
   ./install.sh --restore --backup      # save current live files before replacing them
@@ -217,6 +219,80 @@ revert_backup() {
   echo "Revert complete. Restart Pi or run /reload in an existing session."
 }
 
+install_vscode_keybindings() {
+  local snippet="$ROOT/config/vscode-keybindings.json"
+  [[ -f "$snippet" ]] || return 0
+
+  local target
+  if [[ -n "${VSCODE_KEYBINDINGS:-}" ]]; then
+    target="$VSCODE_KEYBINDINGS"
+  elif [[ "$(uname -s)" == "Darwin" ]]; then
+    target="$HOME/Library/Application Support/Code/User/keybindings.json"
+  else
+    target="${XDG_CONFIG_HOME:-$HOME/.config}/Code/User/keybindings.json"
+  fi
+
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "Skipping VS Code keybindings: python3 not found. Snippet: $snippet"
+    return 0
+  fi
+
+  if [[ "$DRY_RUN" == "1" ]]; then
+    echo "would merge $snippet into $target"
+    return 0
+  fi
+
+  python3 - "$snippet" "$target" <<'PY'
+import json
+import shutil
+import sys
+import time
+from pathlib import Path
+
+snippet_path = Path(sys.argv[1])
+target_path = Path(sys.argv[2])
+entries = json.loads(snippet_path.read_text(encoding="utf-8"))
+if not isinstance(entries, list):
+    sys.exit(f"error: {snippet_path} must contain a JSON array")
+
+if not target_path.exists():
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    target_path.write_text(json.dumps(entries, indent=4, ensure_ascii=False) + "\n", encoding="utf-8")
+    print(f"created {target_path} with {len(entries)} binding(s)")
+    raise SystemExit(0)
+
+text = target_path.read_text(encoding="utf-8")
+
+
+def already_present(entry, haystack):
+    # The same sequence may be stored raw (ESC byte) or escaped (\u001b).
+    raw = entry["args"]["text"]
+    escaped = json.dumps(raw)[1:-1]
+    return raw in haystack or escaped in haystack
+
+
+missing = [e for e in entries if not already_present(e, text)]
+if not missing:
+    print(f"{target_path}: VS Code keybindings already present")
+    raise SystemExit(0)
+
+index = text.find("[")
+if index == -1:
+    print(f"warning: {target_path} has no JSON array; add these bindings manually:")
+    print(json.dumps(missing, indent=4, ensure_ascii=False))
+    raise SystemExit(0)
+
+backup = target_path.with_name(target_path.name + ".bak-" + time.strftime("%Y%m%dT%H%M%S"))
+shutil.copy2(target_path, backup)
+block = "".join(
+    "    " + json.dumps(e, indent=4, ensure_ascii=False).replace("\n", "\n    ") + ",\n"
+    for e in missing
+)
+target_path.write_text(text[: index + 1] + "\n" + block + text[index + 1 :], encoding="utf-8")
+print(f"added {len(missing)} binding(s) to {target_path} (backup: {backup.name})")
+PY
+}
+
 remove_legacy_package_reference() {
   local settings="$PI_HOME/settings.json"
   [[ -f "$settings" ]] || return 0
@@ -340,6 +416,7 @@ if [[ "$COPY_CONFIG" == "1" ]]; then
   if [[ -f "$ROOT/config/playwright-mcp.json" ]]; then
     copy_path "$ROOT/config/playwright-mcp.json" "$PI_HOME/playwright-mcp.json"
   fi
+  install_vscode_keybindings
   remove_legacy_package_reference
 else
   echo "Skipping config copy. To copy settings/mcp examples, run: ./install.sh --copy-config"
