@@ -30,7 +30,8 @@
     "npm:@dustydonkey/pi-spinner",
     "npm:@ayulab/pi-rewind",
     "npm:@juicesharp/rpiv-btw",
-    "npm:@ff-labs/pi-fff"
+    "npm:@ff-labs/pi-fff",
+    "npm:pi-subagents"
   ],
   "defaultProvider": "routerai",
   "defaultModel": "deepseek/deepseek-v4.1-flash-1017",
@@ -44,7 +45,8 @@
   "extensionChangelogVersions": {
     "{\"source\":\"npm:pi-mcp-adapter\",\"scope\":\"user\"}": "7.0.1",
     "{\"source\":\"npm:@narumitw/pi-goal\",\"scope\":\"user\"}": "0.54.15",
-    "{\"source\":\"npm:@dustydonkey/pi-spinner\",\"scope\":\"user\"}": "1.0.2"
+    "{\"source\":\"npm:@dustydonkey/pi-spinner\",\"scope\":\"user\"}": "1.0.2",
+    "{\"source\":\"npm:pi-subagents\",\"scope\":\"user\"}": "0.87.0"
   },
   "extensions": [
     "-builtin:mcp",
@@ -53,5 +55,13 @@
   "defaultTools": [
     "+codemode"
   ],
+  "subagents": {
+    "agentOverrides": {
+      "scout": {
+        "model": "routerai/~deepseek/deepseek-v4-flash-latest",
+        "thinking": "low"
+      }
+    }
+  },
   "showCacheMissNotices": true
 }
