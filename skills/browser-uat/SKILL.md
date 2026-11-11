@@ -68,6 +68,27 @@ session).
 | Tabs | `browser_tabs` |
 | Escape hatch | `browser_run_code_unsafe` (raw Playwright; use sparingly) |
 
+## Project reporting contracts
+
+This skill owns *mechanics*: launching, interacting, waiting, capturing, rescuing a
+hung step. A project skill owns its *reporting contract*: which screenshots a
+report needs, what they must be named, where they are published.
+
+When a project skill demands specific evidence file names (for example attaching
+screenshots to a tracker under `<ID>-NN-<case>-<slug>.png`):
+
+1. Take the screenshot **without** `filename` — it lands in `$TMPDIR/browser-uat`
+   with an absolute path in the tool result.
+2. Copy it to the project's evidence directory under the required name.
+3. Publish from there.
+
+Never satisfy a naming requirement by writing `filename` into the repository.
+Evidence is a build artifact, not source.
+
+If a project skill restates mechanics from this one (launch, screenshot method,
+waiting strategy), the restatement is stale by construction — follow this skill
+and report the duplication.
+
 ## Gotchas
 
 - **`browser_take_screenshot` requires `scale`** (`"css"` or `"device"`), despite
@@ -100,3 +121,6 @@ session).
   a manual display; never run Xvfb directly.
 - Do not leave the browser open across unrelated tasks, and do not leave
   artifacts in a repo.
+- Do not restate this skill's mechanics inside a project skill — point to it
+  instead. Two owners for one procedure means the copy that gets read is the one
+  that rotted.
