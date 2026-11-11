@@ -32,11 +32,13 @@
     "npm:@juicesharp/rpiv-btw",
     "npm:@ff-labs/pi-fff",
     "npm:pi-subagents",
+    "https://github.com/amosblomqvist/pi-observational-memory",
     "npm:@senad-d/micme"
   ],
-  "defaultProvider": "routerai",
+  "defaultProvider": "openrouter",
   "defaultModel": "deepseek/deepseek-v4.1-flash-1017",
   "defaultThinkingLevel": "high",
+  "httpProxy": "http://127.0.0.1:10808",
   "hideThinkingBlock": true,
   "skills": [
     "+skills/find-skills/SKILL.md",
@@ -47,7 +49,8 @@
     "{\"source\":\"npm:pi-mcp-adapter\",\"scope\":\"user\"}": "7.0.1",
     "{\"source\":\"npm:@narumitw/pi-goal\",\"scope\":\"user\"}": "0.54.15",
     "{\"source\":\"npm:@dustydonkey/pi-spinner\",\"scope\":\"user\"}": "1.0.2",
-    "{\"source\":\"npm:pi-subagents\",\"scope\":\"user\"}": "0.87.0"
+    "{\"source\":\"npm:pi-subagents\",\"scope\":\"user\"}": "0.87.0",
+    "{\"source\":\"npm:@senad-d/micme\",\"scope\":\"user\"}": "0.3.8"
   },
   "extensions": [
     "-builtin:mcp",
@@ -59,10 +62,34 @@
   "subagents": {
     "agentOverrides": {
       "scout": {
-        "model": "routerai/~deepseek/deepseek-v4-flash-latest",
+        "model": "openrouter/deepseek/deepseek-v4.1-flash-1017",
         "thinking": "low"
+      },
+      "worker": {
+        "thinking": "medium"
+      },
+      "researcher": {
+        "thinking": "low",
+        "model": "openrouter/deepseek/deepseek-v4.1-flash-1017"
+      },
+      "delegate": {
+        "model": "openrouter/deepseek/deepseek-v4.1-flash-1017"
       }
     }
   },
-  "showCacheMissNotices": true
+  "showCacheMissNotices": true,
+  "observational-memory": {
+    "models": {
+      "observer": {
+        "provider": "openrouter",
+        "id": "deepseek/deepseek-v4.1-flash-1017",
+        "thinking": "low"
+      },
+      "consolidator": {
+        "provider": "openrouter",
+        "id": "deepseek/deepseek-v4.1-flash-1017",
+        "thinking": "medium"
+      }
+    }
+  }
 }

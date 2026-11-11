@@ -42,7 +42,7 @@ Do **not** install this checkout as an active Pi package in normal use. Loading 
 | Install safety | `--dry-run` preview, `--backup`, and `--revert <backup-dir>` |
 | Sync | `pi-setup-sync` copies live `~/.pi/agent` resources back to this repo, commits, and pushes |
 | Extensions | welcome header, context breakdown, file-change review, safety guard, custom footer, local model manager |
-| Config examples | Safe `settings.example.json`, `mcp.example.json`, `micme.example.json`, and `playwright-mcp.json` without personal provider/model choices |
+| Config examples | Safe `settings.example.json`, `mcp.example.json`, `micme.example.json`, and `playwright-mcp.json`; the settings example pins OpenRouter through the local xray proxy |
 | Voice dictation | Micme wired to the local [Handy](https://handy.computer) CLI — `alt+m` to dictate, no cloud STT, no API key |
 | Browser automation | Playwright MCP server for interactive UAT on a private Xvfb display (no focus stealing), with a `browser-uat` skill and `uat.sh` environment CLI |
 | Themes | `nebula-pulse`, `opencode`, `tokyo-night`, `one-dark-pro`, and more |
@@ -137,6 +137,14 @@ Useful installer options:
 `--backup` saves current `extensions`, `themes`, `skills`, `settings.json`, and `mcp.json` under `~/.pi/agent/backups/pi-setup-*` before replacing anything. Revert with the exact command printed at the end of install.
 
 The example settings pin the startup model with `defaultProvider` + `defaultModel` (both are required — `defaultModel` is the bare model id, not `provider/model`). If that provider is not configured on your machine, Pi falls back to the first authenticated model. `enabledModels` is intentionally **not** included: those patterns are machine-specific and can produce noisy "No models match pattern" warnings for anyone restoring this repo before configuring their own providers.
+
+Provider routing in the example:
+
+- `defaultProvider` is `openrouter` with `defaultModel` `deepseek/deepseek-v4.1-flash-1017`; the key comes from `OPENROUTER_API_KEY`.
+- `httpProxy` is `http://127.0.0.1:10808` — the local xray inbound. Pi applies it as `HTTP_PROXY`/`HTTPS_PROXY` for its own HTTP clients (only when those env vars are unset), so OpenRouter works even when the shell has no proxy env. Change or drop it on machines without that proxy. Keep `NO_PROXY=localhost,127.0.0.1,::1` in the shell so local endpoints (LM Studio, local MCP) bypass the proxy.
+- `subagents.agentOverrides` and `observational-memory.models` point at the same OpenRouter model (`scout`/`researcher` low thinking, `worker`/`consolidator` medium).
+- The vendor pin (`morph → decart → inference-net → deepinfra`) lives in `~/.pi/agent/models.json` as `providers.openrouter.modelOverrides`, not in `settings.json`.
+- The previous RouterAI provider block and settings are archived in `~/p/tunnels/docs/client/ai-routing/routerai-provider-config-backup-2026-11-11.md`.
 
 Warnings:
 
@@ -329,6 +337,34 @@ This repo currently includes these Pi customizations.
 
 `config/mcp.example.json` configures two MCP servers: the remote grep server and the
 Playwright browser server. See [Browser automation](#browser-automation-playwright-mcp).
+
+### Starting Pi in `$HOME`
+
+`@ayulab/pi-rewind` auto-checkpoints the session cwd with `git add`. Launched from `$HOME` it
+walks the entire home tree, so Pi prints nothing and appears to hang at startup — no error, no
+prompt. It is not an extension conflict; bisect with `-ne` and one `-e` at a time if you need to
+confirm.
+
+Fix, scoped to `$HOME` only: `~/.pi/settings.json` is the project-level settings file for
+`cwd=$HOME`, and pi-rewind merges it over the user settings.
+
+```json
+{ "ayu": { "checkpoint": { "enabled": false } } }
+```
+
+Project directories keep rewind. Checkpoints accumulate in
+`~/.pi/agent/ayu/checkpoints/sessions` (one bare repo per session, 25 GB after ~100 sessions
+here); prune with `/checkpoint` or delete the directories.
+
+### pstack skills (not installed)
+
+pstack is Cursor's engineering-workflow skill set (`architect`, `arena`, `interrogate`,
+`thermos`, `deslop`, `poteto-mode`, `principle-*`). It is **not** installed here: the
+`pstack-claude-mirror` package registered a tool named `ask_user_question`, which collides with
+`@juicesharp/rpiv-ask-user-question` and stops Pi from starting. It was removed on 2026-11-11.
+
+Which ports are safe next to this setup's tools, which ones collide, and how to re-check the
+numbers before installing anything: [docs/pstack-on-pi.md](docs/pstack-on-pi.md).
 
 ## Voice dictation (Handy + Micme)
 
@@ -531,6 +567,9 @@ References and inspirations.
 
 - [Pi Packages](https://pi.dev/packages)
 - [mattpocock/skills](https://github.com/mattpocock/skills)
+- [Cursor pstack](https://github.com/cursor/plugins/tree/main/pstack) and
+  [michael-denyer/pstack-claude](https://github.com/michael-denyer/pstack-claude) — see
+  [docs/pstack-on-pi.md](docs/pstack-on-pi.md)
 - [amosblomqvist/pi-config](https://github.com/amosblomqvist/pi-config)
 - [llama.cpp](https://github.com/ggml-org/llama.cpp)
 - [noonghunna/club-3090](https://github.com/noonghunna/club-3090)
