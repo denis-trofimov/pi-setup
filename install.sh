@@ -180,6 +180,29 @@ merge_models_example() {
       echo "Merged the OpenRouter vendor pin into $live"
       return 0
     fi
+  elif command -v node >/dev/null 2>&1; then
+    if node - "$live" "$example" >"$tmp" <<'JS'
+const fs = require("fs");
+const [livePath, examplePath] = process.argv.slice(2);
+const merge = (base, extra) => {
+  for (const [key, value] of Object.entries(extra)) {
+    if (value && typeof value === "object" && !Array.isArray(value) &&
+        base[key] && typeof base[key] === "object" && !Array.isArray(base[key])) {
+      merge(base[key], value);
+    } else {
+      base[key] = value;
+    }
+  }
+  return base;
+};
+const data = merge(JSON.parse(fs.readFileSync(livePath, "utf8")), JSON.parse(fs.readFileSync(examplePath, "utf8")));
+process.stdout.write(JSON.stringify(data, null, 2) + "\n");
+JS
+    then
+      mv "$tmp" "$live"
+      echo "Merged the OpenRouter vendor pin into $live"
+      return 0
+    fi
   elif command -v python3 >/dev/null 2>&1; then
     if python3 - "$live" "$example" >"$tmp" <<'PY'
 import json

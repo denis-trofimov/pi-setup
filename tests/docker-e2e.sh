@@ -113,7 +113,7 @@ set -euo pipefail
 echo "ubuntu=$PRETTY_NAME"
 
 apt-get update >/dev/null
-DEBIAN_FRONTEND=noninteractive apt-get install -y git ca-certificates >/dev/null
+DEBIAN_FRONTEND=noninteractive apt-get install -y git ca-certificates jq >/dev/null
 
 if command -v python3 >/dev/null 2>&1; then
   echo "python3_before_restore=present"
@@ -132,6 +132,23 @@ fi
 
 cd pi-setup
 echo "commit=$(git rev-parse --short HEAD)"
+
+# Seed a machine-specific provider: --copy-config must merge the vendor pin into
+# models.json without dropping it.
+mkdir -p /root/.pi/agent
+cat > /root/.pi/agent/models.json <<'JSON'
+{
+  "$schema": "https://pi.dev/schemas/models.schema.json",
+  "providers": {
+    "custom": {
+      "name": "Custom",
+      "baseUrl": "https://example.invalid/v1",
+      "api": "openai-completions",
+      "models": []
+    }
+  }
+}
+JSON
 
 ./install.sh --restore --copy-config
 
@@ -184,6 +201,12 @@ if grep -Eq '"enabledModels"' /root/.pi/agent/settings.json; then
 fi
 grep -q '"defaultProvider"' /root/.pi/agent/settings.json
 grep -q '"defaultModel"' /root/.pi/agent/settings.json
+
+printf "\nVERIFY MODELS MERGE\n"
+test -f /root/.pi/agent/models.json
+jq -e '.providers.custom.baseUrl == "https://example.invalid/v1"' /root/.pi/agent/models.json >/dev/null
+jq -e '.providers.openrouter.modelOverrides["deepseek/deepseek-v4.1-flash-1017"].compat.openRouterRouting.order == ["morph","deepinfra","inference-net"]' /root/.pi/agent/models.json >/dev/null
+echo "models.json merge ok (custom provider kept, pin added)"
 
 grep -q "\"extensions\": \[\]" package.json
 grep -q "\"skills\": \[\]" package.json
