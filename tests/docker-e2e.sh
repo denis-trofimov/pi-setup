@@ -136,9 +136,9 @@ echo "commit=$(git rev-parse --short HEAD)"
 # Seed a machine-specific provider: --copy-config must merge the vendor pin into
 # models.json without dropping it.
 mkdir -p /root/.pi/agent
-cat > /root/.pi/agent/models.json <<'JSON'
+cat > /root/.pi/agent/models.json <<JSON
 {
-  "$schema": "https://pi.dev/schemas/models.schema.json",
+  "\$schema": "https://pi.dev/schemas/models.schema.json",
   "providers": {
     "custom": {
       "name": "Custom",
