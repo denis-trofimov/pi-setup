@@ -154,7 +154,15 @@ test -L /root/.local/bin/pi-setup-sync
 
 grep -q '"playwright"' /root/.pi/agent/mcp.json
 grep -q 'start-maximized' /root/.pi/agent/playwright-mcp.json
-grep -q '@playwright/mcp@' /root/.pi/agent/mcp.json
+grep -q 'playwright-mcp-xvfb.sh' /root/.pi/agent/mcp.json
+test -x /root/.pi/agent/skills/browser-uat/scripts/playwright-mcp-xvfb.sh
+test -x /root/.pi/agent/skills/browser-uat/scripts/uat.sh
+grep -q '@playwright/mcp@[0-9]' /root/.pi/agent/skills/browser-uat/scripts/playwright-mcp-xvfb.sh
+bash -n /root/.pi/agent/skills/browser-uat/scripts/playwright-mcp-xvfb.sh
+bash -n /root/.pi/agent/skills/browser-uat/scripts/uat.sh
+mcp_cmd=$(grep '"command"' /root/.pi/agent/mcp.json | grep "browser-uat" | head -1 | sed "s/.*\"command\": *\"\([^\"]*\)\".*/\1/")
+test -n "$mcp_cmd"
+test -x "${mcp_cmd/#\~/$HOME}"
 
 ext_count=$(find /root/.pi/agent/extensions -type f | wc -l)
 theme_count=$(find /root/.pi/agent/themes -type f -name "*.json" | wc -l)

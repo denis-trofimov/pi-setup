@@ -9,24 +9,24 @@ Interactive browser work driven by the `playwright` MCP server. This is UAT and
 debugging, not test authoring: for CI-style Playwright specs, write a test file
 instead.
 
-## Preconditions
+The browser runs on a **private Xvfb display**, so it never appears on the
+user's desktop and never steals window focus. Screenshots are the only way to
+see it. Environment management lives in a script; do not hand-edit MCP config or
+launch Xvfb yourself.
 
-Check these once per session; they cause every downstream call to fail.
+## Start here
 
-1. `mcp__playwright__*` tools exist. If they do not, the server is missing or was
-   added after the session started — the tool list only refreshes on `/reload`
-   (or a new session). Config lives in `~/.pi/agent/mcp.json`.
-2. Verify the connection with `pi mcp list` (expect `playwright: connected`).
-3. Browser prerequisites: Node/npx, an installed browser, and a display for
-   headed runs (`$DISPLAY` or `$WAYLAND_DISPLAY`). No display → pass
-   `--headless` in the server args.
+```bash
+~/.pi/agent/skills/browser-uat/scripts/uat.sh doctor
+```
 
-Config that this setup ships with:
+`doctor` checks npx, a browser, Xvfb, the MCP entry, and the artifact directory,
+and prints the exact fix for anything missing. Run it once per session before
+blaming a tool call. `uat.sh help` lists the other subcommands.
 
-- `~/.pi/agent/mcp.json` → `@playwright/mcp@0.0.84 --isolated --config ~/.pi/agent/playwright-mcp.json`
-- `~/.pi/agent/playwright-mcp.json` → `viewport: null` + `--start-maximized --ozone-platform=x11`,
-  so the window opens maximized. `--isolated` keeps the profile in memory and
-  never touches the user's real browser profile.
+If `mcp__playwright__*` tools are absent, the server is not connected: run
+`pi mcp list`, then `/reload` (the tool list only refreshes on reload or a new
+session).
 
 ## Workflow
 
@@ -35,7 +35,7 @@ Config that this setup ships with:
    every user-visible control and the state change it should cause. Add at least
    two off-happy-path scenarios (empty input, wrong credentials, back button,
    double submit). This list is what you sign off against — not "I clicked
-   around".
+   around". `uat.sh report` prints a matching template.
 2. **Navigate**, then **snapshot**. `browser_snapshot` gives the accessibility
    tree with element refs; it is the source of truth for acting. Screenshots are
    for humans and visual checks, never for locating elements.
@@ -72,22 +72,22 @@ Config that this setup ships with:
 
 - **`browser_take_screenshot` requires `scale`** (`"css"` or `"device"`), despite
   its schema annotation saying it defaults to `css`. Omitting it fails validation.
-- **Full-screen viewport = heavy screenshots.** The maximized window means
-  screenshots are ~1900px wide. Call `browser_resize` (e.g. 1280×800) when
-  iterating, or take element screenshots.
-- **The window steals focus** when it opens. Wayland compositors do not let an
-  app place itself or decline focus, so this is expected, not a bug. To keep it
-  out of the way: KDE → *Focus stealing prevention: None* plus *Keep below*, or
-  run the server with `--headless`.
-- **Artifacts land in `./.playwright-mcp/`** relative to the session cwd
-  (`page-*.yml` snapshots, `page-*.png` screenshots). Gitignore it; never commit it.
+- **Omit `filename` on screenshots.** Auto-named files land in the artifact
+  directory (`$TMPDIR/browser-uat`, absolute paths in the tool result). An
+  explicit filename resolves against the session cwd and litters the repo.
+- **The display is 1920×1080**, so full-page screenshots are wide. Call
+  `browser_resize` (e.g. 1280×800) when iterating, or take element screenshots.
 - **`--isolated` means no persisted login.** Every server restart starts logged
-  out. For login-heavy UAT either log in as part of the flow, or switch to a
-  dedicated `--user-data-dir` (cookies are secrets — keep it out of git).
+  out. For login-heavy UAT, log in as part of the flow.
+- **The browser self-closes after 15 minutes idle.** The next tool call relaunches
+  it, which loses tabs and session state — re-navigate rather than assuming the
+  page is still there.
 - **`hasFocus`/`visibilityState` are real signals** in `browser_evaluate`; use
   them before blaming the app for a lazy-load or autoplay problem.
 - **Snapshots go stale** after navigation, form submit, or modal open. Re-snapshot
   rather than retrying a click on a dead ref.
+- **Nothing is visible on the user's screen.** If the user asks to watch, they
+  need a screenshot; there is no window to look at.
 
 ## Do not
 
@@ -95,5 +95,8 @@ Config that this setup ships with:
   locator or the wait instead.
 - Do not declare UAT passed without running the inventory; a single happy-path
   click is not a test.
+- Do not hand-edit the playwright entry to change the display or launch it by
+  hand — use `uat.sh config install` for the entry and `uat.sh display start` for
+  a manual display; never run Xvfb directly.
 - Do not leave the browser open across unrelated tasks, and do not leave
-  `.playwright-mcp/` artifacts behind in a repo.
+  artifacts in a repo.

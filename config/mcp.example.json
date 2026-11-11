@@ -4,15 +4,11 @@
       "url": "https://mcp.grep.app"
     },
     "playwright": {
-      "command": "npx",
+      "command": "~/.pi/agent/skills/browser-uat/scripts/playwright-mcp-xvfb.sh",
       "args": [
-        "-y",
-        "@playwright/mcp@0.0.84",
-        "--isolated",
-        "--config",
-        "~/.pi/agent/playwright-mcp.json"
+        "--isolated"
       ],
-      "description": "Drive a real Chromium browser: navigate, click, type, snapshot pages, screenshots, console/network"
+      "description": "Drive a real Chromium browser on a private Xvfb display: navigate, click, type, snapshot pages, screenshots, console/network"
     },
     "sonar": {
       "command": "~/.local/bin/sonar-mcp",

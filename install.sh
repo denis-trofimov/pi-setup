@@ -78,6 +78,7 @@ Options:
 
 Browser automation (playwright MCP) is checked but never installed automatically.
 If prerequisites are missing, install.sh only prints the commands to run.
+The browser runs on a private Xvfb display, so it never steals window focus.
 
 Recommended: install the Pi CLI first. The compact launcher wraps an existing
 Pi binary and will look in /usr/local/bin/pi, /usr/bin/pi, /opt/homebrew/bin/pi,
@@ -348,10 +349,10 @@ PY
 
 check_browser_prereqs() {
   # Non-fatal, advisory only: the playwright MCP server needs Node/npx, an
-  # installed browser, and a display for headed runs. Missing pieces never break
-  # Pi itself, only browser UAT, so this never fails the install.
+  # installed browser, and Xvfb for the private display. Missing pieces never
+  # break Pi itself, only browser UAT, so this never fails the install.
   if [[ "$DRY_RUN" == "1" ]]; then
-    echo "would check browser automation prerequisites (npx, browser, display)"
+    echo "would check browser automation prerequisites (npx, browser, Xvfb)"
     return 0
   fi
 
@@ -378,14 +379,21 @@ check_browser_prereqs() {
     missing=1
   fi
 
-  if [[ -z "${DISPLAY:-}" && -z "${WAYLAND_DISPLAY:-}" ]]; then
-    echo "note: no DISPLAY/WAYLAND_DISPLAY. Browser UAT will fail in headed mode."
-    echo "        Use headless: add --headless to the playwright args in $PI_HOME/mcp.json"
+  if ! command -v Xvfb >/dev/null 2>&1; then
+    echo "note: Xvfb not found. Browser UAT will fall back to headless."
+    echo "        sudo apt install xvfb   # keeps the browser off your desktop"
+  fi
+
+  local wrapper="$PI_HOME/skills/browser-uat/scripts/playwright-mcp-xvfb.sh"
+  if [[ ! -x "$wrapper" ]]; then
+    echo "note: the browser-uat wrapper is not installed at $wrapper"
+    echo "        run ./install.sh --restore, then: $ROOT/skills/browser-uat/scripts/uat.sh config install"
     missing=1
   fi
 
   if [[ "$missing" == "0" ]]; then
-    echo "Browser automation prerequisites look good. Verify with: pi mcp list"
+    echo "Browser automation prerequisites look good. Verify with:"
+    echo "  $PI_HOME/skills/browser-uat/scripts/uat.sh doctor"
   fi
 }
 
@@ -403,6 +411,9 @@ if [[ "$RESTORE" == "1" ]]; then
   copy_dir_contents "$ROOT/extensions" "$PI_HOME/extensions"
   copy_dir_contents "$ROOT/themes" "$PI_HOME/themes"
   copy_dir_contents "$ROOT/skills" "$PI_HOME/skills"
+  if compgen -G "$ROOT/skills/browser-uat/scripts/*.sh" >/dev/null; then
+    run chmod +x "$PI_HOME/skills/browser-uat/scripts/"*.sh
+  fi
 else
   echo "Skipping resource restore. To copy repo resources into $PI_HOME, run: ./install.sh --restore"
 fi
@@ -412,6 +423,55 @@ if [[ "$COPY_CONFIG" == "1" ]]; then
   copy_path "$ROOT/config/settings.example.json" "$PI_HOME/settings.json"
   if [[ -f "$ROOT/config/mcp.example.json" ]]; then
     copy_path "$ROOT/config/mcp.example.json" "$PI_HOME/mcp.json"
+    wrapper_path="$PI_HOME/skills/browser-uat/scripts/playwright-mcp-xvfb.sh"
+    wrapper_display="$wrapper_path"
+    if [[ "$wrapper_path" == "$HOME"/* ]]; then
+      wrapper_display="~/${wrapper_path#"$HOME"/}"
+    fi
+    if command -v jq >/dev/null 2>&1; then
+      if [[ "$DRY_RUN" == "1" ]]; then
+        echo "would rewrite .mcpServers.playwright.command in $PI_HOME/mcp.json to $wrapper_display"
+      else
+        mcp_tmp="$(mktemp)"
+        if jq --arg cmd "$wrapper_display" '.mcpServers.playwright.command = $cmd' "$PI_HOME/mcp.json" >"$mcp_tmp" 2>/dev/null; then
+          mv "$mcp_tmp" "$PI_HOME/mcp.json"
+        else
+          rm -f "$mcp_tmp"
+          echo "note: could not rewrite $PI_HOME/mcp.json; set .mcpServers.playwright.command to $wrapper_display manually"
+        fi
+      fi
+    elif command -v python3 >/dev/null 2>&1; then
+      if [[ "$DRY_RUN" == "1" ]]; then
+        echo "would rewrite .mcpServers.playwright.command in $PI_HOME/mcp.json to $wrapper_display"
+      elif python3 - "$PI_HOME/mcp.json" "$wrapper_display" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+command = sys.argv[2]
+data = json.loads(path.read_text())
+data.setdefault("mcpServers", {}).setdefault("playwright", {})["command"] = command
+path.write_text(json.dumps(data, indent=2) + "\n")
+PY
+      then
+        :
+      else
+        echo "note: could not rewrite $PI_HOME/mcp.json; set .mcpServers.playwright.command to $wrapper_display manually"
+      fi
+    else
+      echo "note: jq and python3 not found; leaving $PI_HOME/mcp.json unchanged. Set .mcpServers.playwright.command to $wrapper_display manually."
+    fi
+  fi
+  if [[ ! -x "$PI_HOME/skills/browser-uat/scripts/playwright-mcp-xvfb.sh" ]]; then
+    copy_dir_contents "$ROOT/skills/browser-uat/scripts" "$PI_HOME/skills/browser-uat/scripts"
+    run chmod +x "$PI_HOME/skills/browser-uat/scripts/playwright-mcp-xvfb.sh" \
+      "$PI_HOME/skills/browser-uat/scripts/uat.sh"
+    if [[ "$DRY_RUN" == "1" ]]; then
+      echo "would install the browser-uat wrapper so the mcp.json playwright entry can spawn."
+    else
+      echo "Installed the browser-uat wrapper so the mcp.json playwright entry can spawn."
+    fi
   fi
   if [[ -f "$ROOT/config/micme.example.json" ]]; then
     copy_path "$ROOT/config/micme.example.json" "$PI_HOME/micme.json"

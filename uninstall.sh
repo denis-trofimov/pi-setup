@@ -129,6 +129,50 @@ if changed:
 PY
 }
 
+MCP_REMOVED=0
+
+remove_mcp_if_playwright_wrapper() {
+  local mcp="$PI_HOME/mcp.json"
+  [[ -f "$mcp" ]] || return 0
+  if command -v jq >/dev/null 2>&1; then
+    local cmd
+    cmd="$(jq -r '.mcpServers.playwright.command // empty' "$mcp" 2>/dev/null || true)"
+    [[ "$cmd" == *skills/browser-uat* ]] || return 0
+    if [[ "$DRY_RUN" == "1" ]]; then
+      echo "would remove .mcpServers.playwright from $mcp"
+      return 0
+    fi
+    local tmp
+    tmp="$(mktemp)"
+    if ! jq 'del(.mcpServers.playwright)' "$mcp" >"$tmp" 2>/dev/null; then
+      rm -f "$tmp"
+      echo "Leaving $mcp: could not parse it with jq"
+      return 0
+    fi
+    if jq -e '(.mcpServers // {}) | length == 0' "$tmp" >/dev/null 2>&1; then
+      rm -f "$tmp"
+      echo "Removing $mcp (playwright was the only MCP server)"
+      rm -f "$mcp"
+      MCP_REMOVED=1
+    else
+      mv "$tmp" "$mcp"
+      echo "Removed .mcpServers.playwright from $mcp"
+    fi
+  else
+    # Without jq we cannot safely edit the JSON, and counting "command" keys
+    # misses servers configured with "url". Never delete the file here.
+    grep -q 'skills/browser-uat' "$mcp" 2>/dev/null || return 0
+    echo "Leaving $mcp: remove .mcpServers.playwright by hand (jq not installed)"
+    return 0
+  fi
+}
+
+remove_mcp_backups() {
+  compgen -G "$PI_HOME/mcp.json.bak.[0-9]*" >/dev/null || return 0
+  echo "Removing mcp.json backups"
+  run rm -f "$PI_HOME/mcp.json.bak."[0-9]*
+}
+
 remove_launcher() {
   local launcher="$BIN_DIR/pi"
   [[ -f "$launcher" || -L "$launcher" ]] || return 0
@@ -168,6 +212,10 @@ remove_restored_tree_entries "$ROOT/themes" "$PI_HOME/themes"
 remove_restored_tree_entries "$ROOT/skills" "$PI_HOME/skills"
 remove_if_matches_file "$PI_HOME/settings.json" "$ROOT/config/settings.example.json"
 remove_if_matches_file "$PI_HOME/mcp.json" "$ROOT/config/mcp.example.json"
+remove_mcp_if_playwright_wrapper
+if [[ "$MCP_REMOVED" == "1" ]]; then
+  remove_mcp_backups
+fi
 remove_if_matches_file "$PI_HOME/micme.json" "$ROOT/config/micme.example.json"
 remove_if_matches_file "$PI_HOME/playwright-mcp.json" "$ROOT/config/playwright-mcp.json"
 remove_self_package_reference

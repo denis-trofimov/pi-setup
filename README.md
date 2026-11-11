@@ -44,7 +44,7 @@ Do **not** install this checkout as an active Pi package in normal use. Loading 
 | Extensions | welcome header, context breakdown, file-change review, safety guard, custom footer, local model manager |
 | Config examples | Safe `settings.example.json`, `mcp.example.json`, `micme.example.json`, and `playwright-mcp.json` without personal provider/model choices |
 | Voice dictation | Micme wired to the local [Handy](https://handy.computer) CLI — `alt+m` to dictate, no cloud STT, no API key |
-| Browser automation | Playwright MCP server for interactive UAT, with a maximized window config and a `browser-uat` skill |
+| Browser automation | Playwright MCP server for interactive UAT on a private Xvfb display (no focus stealing), with a `browser-uat` skill and `uat.sh` environment CLI |
 | Themes | `nebula-pulse`, `opencode`, `tokyo-night`, `one-dark-pro`, and more |
 | Skills | Portable backups of installed Pi/agent skills |
 | Smoke test | Docker restore/sync contract test in `tests/docker-e2e.sh` |
@@ -73,12 +73,13 @@ Do **not** install this checkout as an active Pi package in normal use. Loading 
   - `rose-pine`
   - `synthwave-84`
 - `skills/` — versioned portable copies of installed Pi skills
-  - browser-uat, codebase-design, diagnosing-bugs, domain-modeling, find-docs, find-skills, grill-me, grill-with-docs, grilling, handoff, hf-cli, improve-codebase-architecture, mcp-code-search, redmine-cli, safety-guard, teach, write-a-skill
+  - browser-uat (with `scripts/uat.sh` and the Xvfb MCP wrapper), codebase-design, diagnosing-bugs, domain-modeling, find-docs, find-skills, grill-me, grill-with-docs, grilling, handoff, hf-cli, improve-codebase-architecture, mcp-code-search, redmine-cli, safety-guard, teach, write-a-skill
   - ask-matt, code-review, implement, implement-spec, pr, prototype, research, retro, setup-matt-pocock-skills, tdd, to-questionnaire, to-spec, to-tickets, triage, wait-what, wayfinder, wizard, writing-for-agents
   - local additions, not in upstream `mattpocock/skills`: `skills/setup-matt-pocock-skills/issue-tracker-redmine.md` (a Redmine backend for the tracker skills) and its `## Local addition` section in that skill's `SKILL.md`
 - `config/` — safe example config files
   - `vscode-keybindings.json` — VS Code integrated-terminal bindings that forward `ctrl+alt+d` / `ctrl+shift+d` to Pi as Kitty sequences (see [VS Code terminal keys](#vs-code-terminal-keys))
   - `micme.example.json` — Micme voice dictation wired to the local Handy CLI (see [Voice dictation](#voice-dictation-handy--micme))
+  - `playwright-mcp.json` — base Playwright MCP config the Xvfb wrapper derives from (see [Browser automation](#browser-automation-playwright-mcp))
 
 ## Set up from GitHub on a machine
 
@@ -365,22 +366,41 @@ Interactive browser UAT: navigating, clicking, filling forms, reading console an
 network activity, and taking screenshots of a real browser. This is for manual
 testing and debugging, not for authoring CI test suites.
 
+The browser runs on a **private Xvfb display**, so it never opens a window on
+your desktop, never steals focus, and never covers your editor. Screenshots are
+the only way to see it.
+
 ### What is configured
 
-`config/mcp.example.json` registers the server:
+`config/mcp.example.json` registers the server through a wrapper script:
 
 ```json
 "playwright": {
-  "command": "npx",
-  "args": [
-    "-y", "@playwright/mcp@0.0.84",
-    "--isolated",
-    "--config", "~/.pi/agent/playwright-mcp.json"
-  ]
+  "command": "~/.pi/agent/skills/browser-uat/scripts/playwright-mcp-xvfb.sh",
+  "args": ["--isolated"]
 }
 ```
 
-`config/playwright-mcp.json` opens a maximized window:
+The wrapper (`skills/browser-uat/scripts/playwright-mcp-xvfb.sh`) owns the
+launch details so `mcp.json` stays readable:
+
+- starts `Xvfb`, which picks its own free display number (via `-displayfd`), at `1920x1080x24`
+- derives an Xvfb config from `~/.pi/agent/playwright-mcp.json`, swapping
+  `--start-maximized` (a no-op without a window manager) for `--window-size`
+- writes screenshots, snapshots, and console logs to `$TMPDIR/browser-uat`
+  instead of `./.playwright-mcp/` in the repo
+- closes an idle browser after 15 minutes
+- kills the display when the MCP server exits
+- falls back to `--headless` when Xvfb is missing, so UAT still works
+
+Override the wrapper defaults with `UAT_HEADLESS`, `UAT_SCREEN`, `UAT_ARTIFACTS`,
+`UAT_IDLE_TIMEOUT`, `UAT_MCP_PKG`, or `UAT_PLAYWRIGHT_CONFIG`; the wrapper header
+documents each.
+
+The `:99`-`:120` display scan belongs to `uat.sh display start`, which is only for
+manual debugging; the wrapper never scans.
+
+`config/playwright-mcp.json` is the base config the wrapper derives from:
 
 ```json
 {
@@ -391,68 +411,64 @@ testing and debugging, not for authoring CI test suites.
 }
 ```
 
-- The version is pinned so the tool surface is reproducible. Bump it deliberately.
+- The server version is pinned in the wrapper (`UAT_MCP_PKG`) so the tool surface
+  is reproducible. Bump it deliberately.
 - `--isolated` keeps the browser profile in memory and never touches your real
   browser profile. Logins therefore do not persist between restarts.
-- `viewport: null` is required for maximize to mean anything; otherwise Playwright
-  pins a fixed viewport inside a default-sized window.
-- `--ozone-platform=x11` is required for system Chrome to honour
-  `--start-maximized` under KDE/KWin Wayland. Without it the window opens at
-  roughly half width. Trade-off: the browser renders through XWayland, so usable
-  width is the panel-respecting `1884x1200` rather than native `1920x1200`. At
-  100% scale this is invisible; on HiDPI setups prefer the pinned browser below.
-- `install.sh --copy-config` copies both files. Pi expands the leading `~/` in the
-  `--config` argument, so the entry stays machine-independent.
+- `viewport: null` is required for the window size to mean anything; otherwise
+  Playwright pins a fixed viewport inside a default-sized window.
+- `--ozone-platform=x11` is kept in the base config; it is harmless on the Xvfb
+  path (`DISPLAY` is set, `WAYLAND_DISPLAY` is unset) and required on the
+  headless/fallback path, where `WAYLAND_DISPLAY` may still be set.
 
 ### Verify the setup
 
 ```bash
-pi mcp list          # expect: playwright: connected, <n> tools
+~/.pi/agent/skills/browser-uat/scripts/uat.sh doctor
 ```
 
+`doctor` checks npx, a browser, Xvfb, the MCP entry, and the artifact directory,
+and prints the exact fix for anything missing. `install.sh` runs a subset of
+these checks in advisory mode and never installs prerequisites for you.
+
 Inside Pi, a newly added server is only callable after `/reload` (or a new
-session). `install.sh` prints advisory notes when `npx`, a browser, or a display
-is missing; it never installs anything for you.
+session). The first `npx` run downloads the server package, so the first
+connection is slow.
 
-The first `npx` run downloads the server package, so the first connection is
-slow. If your machine has no display, add `--headless` to the args.
+### Managing the environment
 
-### Using it
+```bash
+uat.sh doctor                     # preconditions, with fixes
+uat.sh config install [--dry-run] # point ~/.pi/agent/mcp.json at the wrapper
+uat.sh config show                # effective playwright config
+uat.sh display start|stop|status  # standalone Xvfb for manual debugging
+uat.sh artifacts list|clean|path  # screenshots, snapshots, logs
+uat.sh report                     # UAT report template
+```
 
-The `browser-uat` skill carries the operating procedure: build a QA inventory
-first, act from `browser_snapshot` refs, verify with console/network evidence,
-and screenshot anything visual. Two sharp edges are worth repeating:
+The browser itself is driven with `mcp__playwright__*` tools, not from the
+script. The `browser-uat` skill carries the operating procedure: build a QA
+inventory first, act from `browser_snapshot` refs, verify with console/network
+evidence, and screenshot anything visual.
+
+Two sharp edges are worth repeating:
 
 - `browser_take_screenshot` **requires** a `scale` argument (`"css"` or
   `"device"`), even though the schema claims a default.
-- Snapshots and screenshots are written to `./.playwright-mcp/` (gitignored).
-  With a maximized window they are ~1900px wide; use `browser_resize` while
-  iterating.
-
-### Known limitation: focus
-
-The window takes keyboard focus when it opens. Wayland does not let an
-application place its own window or decline focus, so neither `--window-position`
-nor `--kiosk` helps (both are ignored here). Options:
-
-- KDE: set *Focus stealing prevention* to none/high and optionally *Keep below*
-  for Chrome in System Settings.
-- Any machine: run the server with `--headless` and rely on screenshots and
-  snapshots.
+- Omit `filename` on screenshots so they land in the artifact directory; an
+  explicit name resolves against the session cwd and litters the repo.
 
 ### Optional: pinned browser instead of system Chrome
 
-The default uses your installed Chrome. For a fully reproducible browser that
-maximizes natively on Wayland (no `--ozone-platform=x11`):
+The default uses your installed Chrome. For a fully reproducible browser:
 
 ```bash
-npx @playwright/mcp@0.0.84 install-browser chrome-for-testing   # ~150 MB, one time
+npx @playwright/mcp install-browser chrome-for-testing   # ~150 MB, one time; version pinned in the wrapper
 ```
 
-Then change the args to `"--isolated", "--browser", "chromium", "--config", ...`
-and drop `--ozone-platform=x11` from `playwright-mcp.json`. Trade-off: UAT then
-runs against a Playwright-managed Chromium build rather than the browser you
-actually use.
+Then add `"--browser", "chromium"` to the `args` in `~/.pi/agent/mcp.json`.
+Trade-off: UAT then runs against a Playwright-managed Chromium build rather than
+the browser you actually use.
 
 ## Useful Pi commands
 
