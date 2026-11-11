@@ -144,7 +144,7 @@ Provider routing in the example:
 - `defaultProvider` is `openrouter` with `defaultModel` `deepseek/deepseek-v4.1-flash-1017`; the key comes from `OPENROUTER_API_KEY`.
 - `httpProxy` is `http://127.0.0.1:10808` — the local xray inbound. Pi applies it as `HTTP_PROXY`/`HTTPS_PROXY` for its own HTTP clients (only when those env vars are unset), so OpenRouter works even when the shell has no proxy env. Change or drop it on machines without that proxy. Keep `NO_PROXY=localhost,127.0.0.1,::1` in the shell so local endpoints (LM Studio, local MCP) bypass the proxy.
 - `subagents.agentOverrides` and `observational-memory.models` point at the same OpenRouter model (`scout`/`researcher` low thinking, `worker`/`consolidator` medium).
-- The vendor pin (`morph → deepinfra → inference-net`) lives in `~/.pi/agent/models.json` as `providers.openrouter.modelOverrides`, not in `settings.json`. `config/models.example.json` carries it for restores: `--copy-config` deep-merges that file into the live `models.json`, so other providers (RouterAI, custom endpoints) survive. Order is by observed cost, not list price: OpenRouter's own per-endpoint cache hit rate decides it, because a uniform 94% cache-read assumption flatters providers that cache worse. Read the rates from the frontend stats API the model page uses:
+- The vendor pin (`deepinfra → inference-net → morph`) lives in `~/.pi/agent/models.json` as `providers.openrouter.modelOverrides`, not in `settings.json`. `config/models.example.json` carries it for restores: `--copy-config` deep-merges that file into the live `models.json`, so other providers (RouterAI, custom endpoints) survive. Order is by observed cost, not list price: OpenRouter's own per-endpoint cache hit rate decides it, because a uniform 94% cache-read assumption flatters providers that cache worse. Read the rates from the frontend stats API the model page uses:
 
 ```bash
 curl -s "https://openrouter.ai/api/frontend/v1/stats/effective-pricing?permaslug=deepseek/deepseek-v4.1-flash-20261017&shape=v7&variant=standard"
@@ -152,7 +152,8 @@ curl -s "https://openrouter.ai/api/frontend/v1/stats/effective-pricing?permaslug
 
 It returns `providerSummaries[].cacheHitRate` and `effectiveInputPrice`/`effectiveOutputPrice` per endpoint. At the 2,280.8M prompt / 11.72M output profile, with each endpoint's *own* measured cache hit rate: `deepinfra/fp8` $21.29 (95.6%), `morph/fp8` $18.98 (87.3%), `inference-net/fp8` $42.17 (89.7%). `deepinfra/fp8/flex` is cheaper still ($12.43, 97.5%) but sits outside Standard routing with p50 3.6 s. List prices only: `curl -s https://openrouter.ai/api/v1/models/deepseek/deepseek-v4.1-flash-1017/endpoints`.
 
-Check `status` on that `api/v1` response before trusting the order: `morph/fp8` went `0 → -2 → -5` with 23% uptime over 30 minutes on 2026-11-11. `allow_fallbacks: true` covers the failure, at the cost of a retry on every request.
+Check `status` on that `api/v1` response before trusting the order: `morph/fp8` went `0 → -2 → -5` with 23% uptime over 30 minutes on 2026-11-11. `allow_fallbacks: true` covers the failure, at the cost of a retry on every request — which is why `morph` sits **last** despite being the cheapest: it is the cheapest only while it is serving. `deepinfra` leads on both health and cache hit rate, `inference-net` is the neutral fallback, and `morph` is promoted again once its `status` returns to 0.
+
 - The previous RouterAI provider block and settings are archived in `~/p/tunnels/docs/client/ai-routing/routerai-provider-config-backup-2026-11-11.md`.
 
 Warnings:

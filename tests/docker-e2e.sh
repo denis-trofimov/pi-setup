@@ -205,7 +205,7 @@ grep -q '"defaultModel"' /root/.pi/agent/settings.json
 printf "\nVERIFY MODELS MERGE\n"
 test -f /root/.pi/agent/models.json
 jq -e ".providers.custom.baseUrl == \"https://example.invalid/v1\"" /root/.pi/agent/models.json >/dev/null
-jq -e ".providers.openrouter.modelOverrides[\"deepseek/deepseek-v4.1-flash-1017\"].compat.openRouterRouting.order == [\"morph\",\"deepinfra\",\"inference-net\"]" /root/.pi/agent/models.json >/dev/null
+jq -e ".providers.openrouter.modelOverrides[\"deepseek/deepseek-v4.1-flash-1017\"].compat.openRouterRouting.order == [\"deepinfra\",\"inference-net\",\"morph\"]" /root/.pi/agent/models.json >/dev/null
 echo "models.json merge ok (custom provider kept, pin added)"
 
 grep -q "\"extensions\": \[\]" package.json

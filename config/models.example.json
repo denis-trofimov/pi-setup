@@ -7,14 +7,14 @@
           "compat": {
             "openRouterRouting": {
               "only": [
-                "morph",
                 "deepinfra",
-                "inference-net"
+                "inference-net",
+                "morph"
               ],
               "order": [
-                "morph",
                 "deepinfra",
-                "inference-net"
+                "inference-net",
+                "morph"
               ],
               "allow_fallbacks": true
             }
