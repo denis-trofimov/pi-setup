@@ -1,0 +1,26 @@
+{
+  "$schema": "https://pi.dev/schemas/models.schema.json",
+  "providers": {
+    "openrouter": {
+      "modelOverrides": {
+        "deepseek/deepseek-v4.1-flash-1017": {
+          "compat": {
+            "openRouterRouting": {
+              "only": [
+                "morph",
+                "deepinfra",
+                "inference-net"
+              ],
+              "order": [
+                "morph",
+                "deepinfra",
+                "inference-net"
+              ],
+              "allow_fallbacks": true
+            }
+          }
+        }
+      }
+    }
+  }
+}

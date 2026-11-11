@@ -154,6 +154,61 @@ copy_dir_contents() {
   run cp -R "$src"/. "$dst"/
 }
 
+# Merge config/models.example.json into the live models.json instead of replacing it.
+# models.json holds machine-specific providers (API keys, custom endpoints), so a
+# straight copy would destroy them; only the example's keys are overlaid.
+merge_models_example() {
+  local example="$ROOT/config/models.example.json"
+  local live="$PI_HOME/models.json"
+  [[ -f "$example" ]] || return 0
+
+  if [[ ! -f "$live" ]]; then
+    copy_path "$example" "$live"
+    return 0
+  fi
+
+  if [[ "$DRY_RUN" == "1" ]]; then
+    echo "would merge config/models.example.json into $live (existing providers kept)"
+    return 0
+  fi
+
+  local tmp
+  tmp="$(mktemp)"
+  if command -v jq >/dev/null 2>&1; then
+    if jq -s '.[0] * .[1]' "$live" "$example" >"$tmp" 2>/dev/null; then
+      mv "$tmp" "$live"
+      echo "Merged the OpenRouter vendor pin into $live"
+      return 0
+    fi
+  elif command -v python3 >/dev/null 2>&1; then
+    if python3 - "$live" "$example" >"$tmp" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+def merge(base, extra):
+    for key, value in extra.items():
+        if isinstance(value, dict) and isinstance(base.get(key), dict):
+            merge(base[key], value)
+        else:
+            base[key] = value
+    return base
+
+live = Path(sys.argv[1])
+data = json.loads(live.read_text())
+merge(data, json.loads(Path(sys.argv[2]).read_text()))
+print(json.dumps(data, indent=2))
+PY
+    then
+      mv "$tmp" "$live"
+      echo "Merged the OpenRouter vendor pin into $live"
+      return 0
+    fi
+  fi
+  rm -f "$tmp"
+  echo "note: could not merge config/models.example.json into $live; add providers.openrouter.modelOverrides manually"
+}
+
 make_backup() {
   if [[ "$BACKUP" != "1" || "$DRY_RUN" == "1" ]]; then
     [[ "$BACKUP" == "1" && "$DRY_RUN" == "1" ]] && echo "would create backup under $PI_HOME/backups/"
@@ -171,7 +226,7 @@ make_backup() {
       touch "$BACKUP_DIR/.absent-$name"
     fi
   done
-  for name in settings.json mcp.json playwright-mcp.json; do
+  for name in settings.json mcp.json playwright-mcp.json models.json; do
     if [[ -f "$PI_HOME/$name" ]]; then
       cp "$PI_HOME/$name" "$BACKUP_DIR/$name"
     else
@@ -207,7 +262,7 @@ revert_backup() {
       echo "Backup has no $name/ state; leaving $PI_HOME/$name unchanged."
     fi
   done
-  for name in settings.json mcp.json playwright-mcp.json; do
+  for name in settings.json mcp.json playwright-mcp.json models.json; do
     if [[ -f "$backup/$name" ]]; then
       copy_path "$backup/$name" "$PI_HOME/$name"
     elif [[ -f "$backup/.absent-$name" ]]; then
@@ -479,6 +534,7 @@ PY
   if [[ -f "$ROOT/config/playwright-mcp.json" ]]; then
     copy_path "$ROOT/config/playwright-mcp.json" "$PI_HOME/playwright-mcp.json"
   fi
+  merge_models_example
   install_vscode_keybindings
   remove_legacy_package_reference
 else

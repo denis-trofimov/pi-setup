@@ -80,6 +80,7 @@ Do **not** install this checkout as an active Pi package in normal use. Loading 
   - `vscode-keybindings.json` — VS Code integrated-terminal bindings that forward `ctrl+alt+d` / `ctrl+shift+d` to Pi as Kitty sequences (see [VS Code terminal keys](#vs-code-terminal-keys))
   - `micme.example.json` — Micme voice dictation wired to the local Handy CLI (see [Voice dictation](#voice-dictation-handy--micme))
   - `playwright-mcp.json` — base Playwright MCP config the Xvfb wrapper derives from (see [Browser automation](#browser-automation-playwright-mcp))
+  - `models.example.json` — the OpenRouter vendor pin; `--copy-config` merges it into `models.json` instead of replacing it
 
 ## Set up from GitHub on a machine
 
@@ -143,13 +144,13 @@ Provider routing in the example:
 - `defaultProvider` is `openrouter` with `defaultModel` `deepseek/deepseek-v4.1-flash-1017`; the key comes from `OPENROUTER_API_KEY`.
 - `httpProxy` is `http://127.0.0.1:10808` — the local xray inbound. Pi applies it as `HTTP_PROXY`/`HTTPS_PROXY` for its own HTTP clients (only when those env vars are unset), so OpenRouter works even when the shell has no proxy env. Change or drop it on machines without that proxy. Keep `NO_PROXY=localhost,127.0.0.1,::1` in the shell so local endpoints (LM Studio, local MCP) bypass the proxy.
 - `subagents.agentOverrides` and `observational-memory.models` point at the same OpenRouter model (`scout`/`researcher` low thinking, `worker`/`consolidator` medium).
-- The vendor pin (`morph → decart → inference-net → deepinfra`) lives in `~/.pi/agent/models.json` as `providers.openrouter.modelOverrides`, not in `settings.json`.
+- The vendor pin (`morph → deepinfra → inference-net`) lives in `~/.pi/agent/models.json` as `providers.openrouter.modelOverrides`, not in `settings.json`. `config/models.example.json` carries it for restores: `--copy-config` deep-merges that file into the live `models.json`, so other providers (RouterAI, custom endpoints) survive. Order is by current price at the 94% cache-read profile; re-check with `curl -s https://openrouter.ai/api/v1/models/deepseek/deepseek-v4.1-flash-1017/endpoints`. Morph is cheapest but serves an 84.8% cache hit rate, so its real cost is closer to $20/period than the $16.27 the 94% profile predicts.
 - The previous RouterAI provider block and settings are archived in `~/p/tunnels/docs/client/ai-routing/routerai-provider-config-backup-2026-11-11.md`.
 
 Warnings:
 
 - `--restore` replaces the current contents of those live resource directories.
-- `--copy-config` overwrites `~/.pi/agent/settings.json` and `~/.pi/agent/mcp.json`.
+- `--copy-config` overwrites `~/.pi/agent/settings.json` and `~/.pi/agent/mcp.json`, and merges (does not overwrite) `~/.pi/agent/models.json`.
 - `--copy-config` only *adds* missing VS Code keybindings; it never rewrites or removes existing ones. Set `VSCODE_KEYBINDINGS=/path/to/keybindings.json` to target a non-default location (e.g. VS Code Insiders or a profile).
 - Use `--dry-run` first if you only want to preview the restore.
 

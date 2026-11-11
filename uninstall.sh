@@ -218,6 +218,7 @@ if [[ "$MCP_REMOVED" == "1" ]]; then
 fi
 remove_if_matches_file "$PI_HOME/micme.json" "$ROOT/config/micme.example.json"
 remove_if_matches_file "$PI_HOME/playwright-mcp.json" "$ROOT/config/playwright-mcp.json"
+remove_if_matches_file "$PI_HOME/models.json" "$ROOT/config/models.example.json"
 remove_self_package_reference
 
 echo "Done. Pi's own installation is untouched. If your shell cached $BIN_DIR/pi, run: hash -r"
