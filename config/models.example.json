@@ -21,6 +21,76 @@
           }
         }
       }
+    },
+    "routerai": {
+      "modelOverrides": {
+        "z-ai/glm-5.3": {
+          "compat": {
+            "openRouterRouting": {
+              "only": [
+                "wafer",
+                "decart",
+                "gmicloud"
+              ],
+              "order": [
+                "wafer",
+                "decart",
+                "gmicloud"
+              ],
+              "allow_fallbacks": true
+            }
+          }
+        },
+        "z-ai/glm-5.3-flash": {
+          "compat": {
+            "openRouterRouting": {
+              "only": [
+                "primeintellect",
+                "gmicloud",
+                "relace"
+              ],
+              "order": [
+                "primeintellect",
+                "gmicloud",
+                "relace"
+              ],
+              "allow_fallbacks": true
+            }
+          }
+        },
+        "deepseek/deepseek-v4.1-flash-1017": {
+          "compat": {
+            "openRouterRouting": {
+              "only": [
+                "morph",
+                "deepinfra",
+                "inference-net"
+              ],
+              "order": [
+                "morph",
+                "deepinfra",
+                "inference-net"
+              ],
+              "allow_fallbacks": true
+            }
+          }
+        },
+        "~deepseek/deepseek-v4-flash-latest": {
+          "compat": {
+            "openRouterRouting": {
+              "only": [
+                "relace",
+                "wafer"
+              ],
+              "order": [
+                "relace",
+                "wafer"
+              ],
+              "allow_fallbacks": true
+            }
+          }
+        }
+      }
     }
   }
 }

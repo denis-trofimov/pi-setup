@@ -206,7 +206,8 @@ printf "\nVERIFY MODELS MERGE\n"
 test -f /root/.pi/agent/models.json
 jq -e ".providers.custom.baseUrl == \"https://example.invalid/v1\"" /root/.pi/agent/models.json >/dev/null
 jq -e ".providers.openrouter.modelOverrides[\"deepseek/deepseek-v4.1-flash-1017\"].compat.openRouterRouting.order == [\"deepinfra\",\"inference-net\",\"morph\"]" /root/.pi/agent/models.json >/dev/null
-echo "models.json merge ok (custom provider kept, pin added)"
+jq -e ".providers.routerai.modelOverrides[\"z-ai/glm-5.3\"].compat.openRouterRouting.order == [\"wafer\",\"decart\",\"gmicloud\"]" /root/.pi/agent/models.json >/dev/null
+echo "models.json merge ok (custom provider kept, openrouter + routerai pins added)"
 
 grep -q "\"extensions\": \[\]" package.json
 grep -q "\"skills\": \[\]" package.json
