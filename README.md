@@ -344,28 +344,23 @@ This repo currently includes these Pi customizations.
 - context-mode and related context skills
 - goal completion helper
 - advisor tool
-- spinner, rewind, `/btw`, and fff search
+- spinner, `/btw`, and fff search
 
 `config/mcp.example.json` configures two MCP servers: the remote grep server and the
 Playwright browser server. See [Browser automation](#browser-automation-playwright-mcp).
 
-### Starting Pi in `$HOME`
+### Rewind checkpoints (removed)
 
-`@ayulab/pi-rewind` auto-checkpoints the session cwd with `git add`. Launched from `$HOME` it
-walks the entire home tree, so Pi prints nothing and appears to hang at startup — no error, no
-prompt. It is not an extension conflict; bisect with `-ne` and one `-e` at a time if you need to
-confirm.
+`@ayulab/pi-rewind` was dropped from the package list on 2026-11-11. It auto-checkpointed the
+session cwd with `git add` into one bare repo per session under
+`~/.pi/agent/ayu/checkpoints/sessions`, with no blob sharing between sessions: 25 GB after
+~100 sessions, ~745 MB for a single session in a large project. Launched from `$HOME` it walked
+the entire home tree, so Pi printed nothing and appeared to hang at startup; the workaround was
+`~/.pi/settings.json` with `{ "ayu": { "checkpoint": { "enabled": false } } }`.
 
-Fix, scoped to `$HOME` only: `~/.pi/settings.json` is the project-level settings file for
-`cwd=$HOME`, and pi-rewind merges it over the user settings.
-
-```json
-{ "ayu": { "checkpoint": { "enabled": false } } }
-```
-
-Project directories keep rewind. Checkpoints accumulate in
-`~/.pi/agent/ayu/checkpoints/sessions` (one bare repo per session, 25 GB after ~100 sessions
-here); prune with `/checkpoint` or delete the directories.
+The package and `~/.pi/agent/ayu` are both gone. `/rewind` and `/tree` file restore are no longer
+available; if the package comes back, set `ayu.checkpoint.exclude` (or `enabled: false`) before
+the first session in any large project.
 
 ### pstack skills (not installed)
 
