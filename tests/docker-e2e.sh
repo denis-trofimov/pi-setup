@@ -210,6 +210,11 @@ jq -e ".providers.routerai.modelOverrides[\"z-ai/glm-5.3\"].compat.openRouterRou
 jq -e ".providers.routerai.modelOverrides[\"deepseek/deepseek-v4.1-flash-1017\"].compat.openRouterRouting.order == .providers.openrouter.modelOverrides[\"deepseek/deepseek-v4.1-flash-1017\"].compat.openRouterRouting.order" /root/.pi/agent/models.json >/dev/null
 echo "models.json merge ok (custom provider kept, openrouter + routerai pins added)"
 
+printf "\nVERIFY ROUTED-REQUEST EXTENSION\n"
+test -f /root/.pi/agent/extensions/no-output-cap.ts
+grep -q 'before_provider_request' /root/.pi/agent/extensions/no-output-cap.ts
+echo "no-output-cap extension restored"
+
 grep -q "\"extensions\": \[\]" package.json
 grep -q "\"skills\": \[\]" package.json
 grep -q "\"themes\": \[\]" package.json
