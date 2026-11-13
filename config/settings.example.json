@@ -32,7 +32,8 @@
     "npm:@ff-labs/pi-fff",
     "npm:pi-subagents",
     "https://github.com/amosblomqvist/pi-observational-memory",
-    "npm:@senad-d/micme"
+    "npm:@senad-d/micme",
+    "npm:pi-pstack-adapter"
   ],
   "defaultProvider": "openrouter",
   "defaultModel": "deepseek/deepseek-v4.1-flash-1017",
@@ -49,7 +50,8 @@
     "{\"source\":\"npm:@narumitw/pi-goal\",\"scope\":\"user\"}": "0.54.15",
     "{\"source\":\"npm:@dustydonkey/pi-spinner\",\"scope\":\"user\"}": "1.0.2",
     "{\"source\":\"npm:pi-subagents\",\"scope\":\"user\"}": "0.87.0",
-    "{\"source\":\"npm:@senad-d/micme\",\"scope\":\"user\"}": "0.3.8"
+    "{\"source\":\"npm:@senad-d/micme\",\"scope\":\"user\"}": "0.3.8",
+    "{\"source\":\"npm:pi-pstack-adapter\",\"scope\":\"user\"}": "0.10.0"
   },
   "extensions": [
     "-builtin:mcp",
