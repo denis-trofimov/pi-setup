@@ -210,6 +210,7 @@ remove_sync_helper
 remove_restored_tree_entries "$ROOT/extensions" "$PI_HOME/extensions"
 remove_restored_tree_entries "$ROOT/themes" "$PI_HOME/themes"
 remove_restored_tree_entries "$ROOT/skills" "$PI_HOME/skills"
+remove_if_matches_file "$PI_HOME/AGENTS.md" "$ROOT/config/AGENTS.md"
 remove_if_matches_file "$PI_HOME/settings.json" "$ROOT/config/settings.example.json"
 remove_if_matches_file "$PI_HOME/mcp.json" "$ROOT/config/mcp.example.json"
 remove_mcp_if_playwright_wrapper

@@ -81,6 +81,7 @@ Do **not** install this checkout as an active Pi package in normal use. Loading 
   - `micme.example.json` — Micme voice dictation wired to the local Handy CLI (see [Voice dictation](#voice-dictation-handy--micme))
   - `playwright-mcp.json` — base Playwright MCP config the Xvfb wrapper derives from (see [Browser automation](#browser-automation-playwright-mcp))
   - `models.example.json` — the OpenRouter vendor pin; `--copy-config` merges it into `models.json` instead of replacing it
+  - `AGENTS.md` — the delegation model policy: allowed families (`deepseek/*`, `z-ai/glm-*`), blocked families (`google/*`/`gemini-*`, `openai/*`/`gpt-*`), no Cursor model slugs, `pstack:<role>` instead of a model (see [pstack skills](#pstack-skills-pi-pstack-adapter))
 
 ## Set up from GitHub on a machine
 
@@ -393,6 +394,23 @@ the generated host-mapping row. `install.sh` re-applies it, because `pi install`
 The earlier `pstack-claude-mirror` package registered its own `ask_user_question` tool, which
 collided with rpiv and stopped Pi from starting; it was removed on 2026-11-11 and stays out.
 Which other ports are safe next to this setup's tools: [docs/pstack-on-pi.md](docs/pstack-on-pi.md).
+
+The upstream bodies also hardcode Cursor model ids. Whenever their Cursor rule file is missing —
+always, on Pi — they fall back to `claude-opus-5-5-xhigh` and `grok-4.7-xhigh-fast`, ids that do not
+exist here. `patches/pi-pstack-models.sh` rewrites every generated body, and every copied playbook
+and reference file, to a `pstack:<role>` reference, so no skill names a model; the adapter's own
+`setup.md` examples use `<provider>/<model>` placeholders instead. The rewrite table lives in the
+script and the run fails when a new upstream release adds a slug the table does not cover:
+
+```bash
+./patches/pi-pstack-models.sh --check     # exit 1 if the patch is missing
+./patches/pi-pstack-models.sh             # apply + drop stale generated wrappers
+```
+
+`config/AGENTS.md` carries the matching delegation rule — `deepseek/*` and `z-ai/glm-*` allowed,
+`google/*`/`gemini-*` and `openai/*`/`gpt-*` blocked. `install.sh --restore` copies it only when
+`~/.pi/agent/AGENTS.md` is absent; `--copy-config` overwrites. Background and the evidence:
+[docs/pstack-on-pi.md](docs/pstack-on-pi.md#model-slugs-and-why-a-fan-out-dies-on-gemini).
 
 ## Voice dictation (Handy + Micme)
 

@@ -83,6 +83,31 @@ the tool instead of removing the package: write `pi ask tool: off` to
 `~/.pi/agent/pstack-models.md`. That file is pstack's override sheet and is not backed up by this
 repo.
 
+## Model slugs, and why a fan-out dies on Gemini
+
+Two different mechanisms get conflated here, so keep them apart.
+
+**The skills name models.** Upstream pstack targets Cursor, where every skill reads
+`~/.cursor/rules/pstack-models.mdc` and falls back to a literal slug when that file is missing:
+`claude-opus-5-5-xhigh`, `grok-4.7-xhigh-fast`, `composer-*`, `cursor-grok-*`. Pi never has the rule
+file, so the fallback always fires. Measured on pstack 0.15.36: 7 skills plus 6 playbooks, 51
+occurrences, and no `gemini` anywhere in the upstream tree. `patches/pi-pstack-models.sh` replaces
+them with `pstack:<role>` references at generation time, and fails the run if a future release adds
+a slug the table does not cover.
+
+**The adapter lists models it cannot run.** `pstack_adapter models` prints every id Pi knows, not
+every id the provider serves. On 2026-11-13 a review fan-out in `work/msl-msb-lk` read that list,
+picked `openrouter/google/gemini-3.8-flash` "for family diversity", and lost the run to a blocked
+Gemini model. That was an ad-hoc `subagent` fan-out, not a pstack skill. The adapter itself never
+picks a model: with unset roles it passes `pstack:<role>` and the child inherits the parent's model.
+
+Do not fix the second one with `set_filter`. Per `src/gate.ts`, an active filter blocks every
+`subagent` workflow script, every child that names no model, and the `resume`, `steer`, and
+`schedule` actions — that breaks ordinary delegation for the whole session. The rule in
+`config/AGENTS.md` (allowed: `deepseek/*`, `z-ai/glm-*`; blocked: `google/*`/`gemini-*`,
+`openai/*`/`gpt-*`) is the cheap guard. A session-scoped `set_filter` is worth it only inside a
+pstack panel run, and has to be cleared afterwards.
+
 ## Re-checking before installing
 
 ```sh

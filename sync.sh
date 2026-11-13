@@ -381,7 +381,7 @@ cd "$ROOT"
 
 if [[ "$DRY_RUN" == "1" ]]; then
   echo "Dry run: would sync from $PI_HOME into $ROOT"
-  echo "Files that may change: extensions/, themes/, skills/, config/settings.example.json, config/mcp.example.json, config/micme.example.json"
+  echo "Files that may change: extensions/, themes/, skills/, config/settings.example.json, config/mcp.example.json, config/micme.example.json, config/AGENTS.md"
   exit 0
 fi
 
@@ -397,6 +397,9 @@ if [[ -f "$PI_HOME/mcp.json" ]]; then
 fi
 if [[ -f "$PI_HOME/micme.json" ]]; then
   cp "$PI_HOME/micme.json" "$ROOT/config/micme.example.json"
+fi
+if [[ -f "$PI_HOME/AGENTS.md" ]]; then
+  cp "$PI_HOME/AGENTS.md" "$ROOT/config/AGENTS.md"
 fi
 
 validate_json "$ROOT/package.json" "$ROOT/config/settings.example.json"

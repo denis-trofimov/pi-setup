@@ -154,6 +154,24 @@ copy_dir_contents() {
   run cp -R "$src"/. "$dst"/
 }
 
+# AGENTS.md holds always-on instructions for every Pi session. Unlike skills and
+# themes, a live copy can carry machine-local rules, so restore it only when there
+# is none; --copy-config asks for the overwrite.
+install_agents_md() {
+  local src="$ROOT/config/AGENTS.md"
+  local dst="$PI_HOME/AGENTS.md"
+  [[ -f "$src" ]] || return 0
+  if [[ -f "$dst" && "$COPY_CONFIG" != "1" ]]; then
+    if cmp -s "$src" "$dst"; then
+      echo "AGENTS.md is up to date."
+    else
+      echo "AGENTS.md differs from the repo copy; leaving it (use --copy-config to overwrite)."
+    fi
+    return 0
+  fi
+  copy_path "$src" "$dst"
+}
+
 # Merge config/models.example.json into the live models.json instead of replacing it.
 # models.json holds machine-specific providers (API keys, custom endpoints), so a
 # straight copy would destroy them; only the example's keys are overlaid.
@@ -489,6 +507,7 @@ if [[ "$RESTORE" == "1" ]]; then
   copy_dir_contents "$ROOT/extensions" "$PI_HOME/extensions"
   copy_dir_contents "$ROOT/themes" "$PI_HOME/themes"
   copy_dir_contents "$ROOT/skills" "$PI_HOME/skills"
+  install_agents_md
   if compgen -G "$ROOT/skills/browser-uat/scripts/*.sh" >/dev/null; then
     run chmod +x "$PI_HOME/skills/browser-uat/scripts/"*.sh
   fi
