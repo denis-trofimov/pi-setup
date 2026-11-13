@@ -9,6 +9,7 @@ set -euo pipefail
 #   ./sync.sh --dry-run
 #   ./sync.sh --all-skills
 #   ./sync.sh --skills hf-cli,diagnosing-bugs
+#   ./sync.sh --prune-skills
 
 SCRIPT_SOURCE="${BASH_SOURCE[0]}"
 while [[ -L "$SCRIPT_SOURCE" ]]; do
@@ -22,6 +23,7 @@ PUSH=1
 DRY_RUN=0
 SKILLS_MODE="prompt"
 SKILLS_FILTER=""
+PRUNE_SKILLS=0
 MESSAGE="Update Pi setup"
 
 while [[ $# -gt 0 ]]; do
@@ -42,13 +44,17 @@ while [[ $# -gt 0 ]]; do
       SKILLS_MODE="none"
       shift
       ;;
+    --prune-skills)
+      PRUNE_SKILLS=1
+      shift
+      ;;
     --skills)
       SKILLS_MODE="filter"
       SKILLS_FILTER="${2:?missing comma-separated skill names for --skills}"
       shift 2
       ;;
     -h|--help)
-      sed -n '1,18p' "$0" | sed 's/^# \{0,1\}//'
+      awk 'NR <= 3 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"
       exit 0
       ;;
     *)
@@ -240,7 +246,9 @@ select_skills() {
 
 copy_selected_skills() {
   local dst_root="$ROOT/skills"
-  local i name src kind dst selected_count=0
+  local i name src kind dst selected_count=0 entry base
+  local -A local_name=() selected_name=()
+  local -a kept_missing=() kept_deselected=()
   # --no-skills means "leave the repo's skills/ alone", not "delete them".
   # Wiping here would silently drop every backed-up skill from the repo.
   if [[ "$SKILLS_MODE" == "none" ]]; then
@@ -248,7 +256,48 @@ copy_selected_skills() {
     return
   fi
   mkdir -p "$dst_root"
-  find "$dst_root" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+
+  for i in "${!SKILL_NAMES[@]}"; do
+    local_name["${SKILL_NAMES[$i]}"]=1
+    [[ "${SKILL_SELECTED[$i]}" == "1" ]] && selected_name["${SKILL_NAMES[$i]}"]=1
+  done
+
+  # Pruning a repo that discovery never populated would delete every backed-up
+  # skill at once, so refuse that combination outright.
+  if [[ "$PRUNE_SKILLS" == "1" && "${#SKILL_NAMES[@]}" == "0" ]]; then
+    echo "error: --prune-skills with no locally discovered skills; refusing to empty $dst_root" >&2
+    exit 1
+  fi
+
+  # Remove only the entries this run is about to rewrite. Everything else stays
+  # unless --prune-skills asks for it: a skill that exists only in the repo (a
+  # copy archived locally, a skill never installed on this machine) must not
+  # disappear just because this machine does not have it.
+  for entry in "$dst_root"/*; do
+    [[ -e "$entry" ]] || continue
+    base="$(basename "$entry")"
+    base="${base%.md}"
+    if [[ -n "${selected_name[$base]:-}" ]]; then
+      rm -rf "$entry"
+    elif [[ "$PRUNE_SKILLS" == "1" ]]; then
+      echo "pruned: $base"
+      rm -rf "$entry"
+    elif [[ -n "${local_name[$base]:-}" ]]; then
+      kept_deselected+=("$base")
+    else
+      kept_missing+=("$base")
+    fi
+  done
+
+  if [[ "${#kept_missing[@]}" -gt 0 ]]; then
+    echo "warning: ${#kept_missing[@]} skill(s) in repo not found locally (kept): ${kept_missing[*]}"
+  fi
+  if [[ "${#kept_deselected[@]}" -gt 0 ]]; then
+    echo "warning: ${#kept_deselected[@]} skill(s) in repo deselected this run (kept): ${kept_deselected[*]}"
+  fi
+  if [[ "${#kept_missing[@]}" -gt 0 || "${#kept_deselected[@]}" -gt 0 ]]; then
+    echo "hint: --prune-skills deletes them instead"
+  fi
 
   for i in "${!SKILL_NAMES[@]}"; do
     [[ "${SKILL_SELECTED[$i]}" == "1" ]] || continue

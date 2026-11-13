@@ -29,3 +29,30 @@ approval first.
   a provider catalog for a "different family".
 - When a delegation fails on its model, report the failure and name the model or role. Do not
   silently substitute another model.
+
+# GitHub: авторство артефактов
+
+`GITHUB_TOKEN` в окружении этой машины — **ключ разработчика для установки пакетов** (composer),
+а не личная учётная запись. `gh` берёт `GITHUB_TOKEN` раньше сохранённого логина, поэтому
+`gh pr create` / `gh api …/reviews` / `gh pr comment` без снятия переменной создают артефакты
+от служебного аккаунта. Это уже случалось (PR #142 в msb-calculator-api, 13.11.2026).
+
+## Правило
+
+PR, ревью и комментарии, у которых автором должен быть человек, создаются только от личной
+учётной записи — `denis-trofimov`. Коммиты отдельно: их автор берётся из `~/.gitconfig`
+(`Denis Trofimov <silaradost@yandex.ru>`), `GITHUB_TOKEN` на них не влияет.
+
+## Как
+
+```bash
+env -u GITHUB_TOKEN gh auth status          # должно быть: denis-trofimov
+env -u GITHUB_TOKEN gh pr create …          # PR от человека
+env -u GITHUB_TOKEN gh api repos/<o>/<r>/pulls/<N>/reviews -X POST --input …   # ревью от человека
+```
+
+- Перед публикацией любого артефакта в GitHub — проверить логин (`gh auth status` без переменной)
+  или автора готового объекта (`gh pr view <N> --json author`).
+- Автор PR в GitHub не меняется: ошибочно оформленный PR закрыть с пояснением и пересоздать
+  от личной учётки (ветка и коммиты те же).
+- Не печатать значения токенов в чат, логи и файлы репозитория.

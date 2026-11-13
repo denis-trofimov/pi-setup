@@ -264,7 +264,17 @@ Non-interactive options:
 pi-setup-sync --all-skills
 pi-setup-sync --skills hf-cli,diagnosing-bugs "Back up selected skills"
 pi-setup-sync --no-skills "Skip skill backup"
+pi-setup-sync --prune-skills "Drop skills that are gone"
 ```
+
+Skill backup never deletes a repo skill just because this machine cannot see it. `skills/` entries that were not selected — because the skill is not installed under `~/.pi/agent/skills` or `~/.agents/skills`, or because you deselected it — are kept and reported:
+
+```
+warning: 1 skill(s) in repo not found locally (kept): redmine-cli
+hint: --prune-skills deletes them instead
+```
+
+A locally archived skill (`~/.pi/agent/skills-archive/...`) is therefore safe: it stays in the repo as a backup and is not wiped by a sync from a machine that does not load it. Only `--prune-skills` removes those entries, and it refuses to run when discovery found no local skills at all, so a missing `~/.pi/agent/skills` cannot empty the repo.
 
 ## Manual tests
 
