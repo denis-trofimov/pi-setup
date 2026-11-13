@@ -109,6 +109,10 @@ and report the duplication.
   rather than retrying a click on a dead ref.
 - **Nothing is visible on the user's screen.** If the user asks to watch, they
   need a screenshot; there is no window to look at.
+- **`file:` URLs are blocked** — `browser_navigate` to `file:///…` fails with
+  «Access to "file:" protocol is blocked». Serve the directory instead:
+  `python3 -m http.server 8765` in the document's folder, open
+  `http://127.0.0.1:8765/<page>.html`, and kill the server when the check is done.
 
 ## Do not
 
