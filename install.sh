@@ -572,6 +572,24 @@ else
   "$ROOT/setup_sync.sh"
 fi
 
+# Pi reinstalls npm packages on `pi install` / `pi update --extensions`, which
+# reverts local patches to them. Re-apply ours here; each script is idempotent
+# and skips packages that are not installed.
+apply_local_patches() {
+  local patch_script
+  for patch_script in "$ROOT"/patches/*.sh; do
+    [[ -f "$patch_script" ]] || continue
+    [[ -x "$patch_script" ]] || chmod +x "$patch_script"
+    if [[ "$DRY_RUN" == "1" ]]; then
+      "$patch_script" --dry-run || true
+    else
+      "$patch_script"
+    fi
+  done
+}
+
+apply_local_patches
+
 is_our_launcher() {
   grep -q "Personal Pi launcher" "$1" 2>/dev/null
 }

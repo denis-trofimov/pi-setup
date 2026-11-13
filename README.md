@@ -364,15 +364,35 @@ The package and `~/.pi/agent/ayu` are both gone. `/rewind` and `/tree` file rest
 available; if the package comes back, set `ayu.checkpoint.exclude` (or `enabled: false`) before
 the first session in any large project.
 
-### pstack skills (not installed)
+### pstack skills (`pi-pstack-adapter`)
 
 pstack is Cursor's engineering-workflow skill set (`architect`, `arena`, `interrogate`,
-`thermos`, `deslop`, `poteto-mode`, `principle-*`). It is **not** installed here: the
-`pstack-claude-mirror` package registered a tool named `ask_user_question`, which collides with
-`@juicesharp/rpiv-ask-user-question` and stops Pi from starting. It was removed on 2026-11-11.
+`thermos`, `deslop`, `poteto-mode`, `principle-*`). It is installed here through
+`npm:pi-pstack-adapter`, which downloads a certified pstack checkout and exposes every workflow
+as a `pistack-*` skill:
 
-Which ports are safe next to this setup's tools, which ones collide, and how to re-check the
-numbers before installing anything: [docs/pstack-on-pi.md](docs/pstack-on-pi.md).
+```bash
+pi install npm:pi-pstack-adapter
+PISTACK_ALLOW_BOOTSTRAP=1 pi --print ok   # populate the cache without the first-start prompt
+```
+
+Cache: `~/.pi/agent/cache/pi-pstack-adapter/`. Status and per-workflow requirements:
+`/pistack-status` and `/pistack-check <skill>`.
+
+The question provider is `@juicesharp/rpiv-ask-user-question`, **not** `pi-ask-user`. The adapter
+hardcodes a probe for a tool named `ask_user` with `question` + `options` parameters, so
+`patches/pi-pstack-adapter.sh` rewrites that probe to `ask_user_question` / `questions` and fixes
+the generated host-mapping row. `install.sh` re-applies it, because `pi install` and
+`pi update --extensions` reinstall the npm package and revert the patch:
+
+```bash
+./patches/pi-pstack-adapter.sh --check     # exit 1 if the patch is missing
+./patches/pi-pstack-adapter.sh             # apply + drop stale generated wrappers
+```
+
+The earlier `pstack-claude-mirror` package registered its own `ask_user_question` tool, which
+collided with rpiv and stopped Pi from starting; it was removed on 2026-11-11 and stays out.
+Which other ports are safe next to this setup's tools: [docs/pstack-on-pi.md](docs/pstack-on-pi.md).
 
 ## Voice dictation (Handy + Micme)
 
