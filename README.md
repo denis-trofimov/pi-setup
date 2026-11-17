@@ -45,6 +45,7 @@ Do **not** install this checkout as an active Pi package in normal use. Loading 
 | Config examples | Safe `settings.example.json`, `mcp.example.json`, `micme.example.json`, `playwright-mcp.json`, and the `pi-pstack-adapter.json` role pinning; the settings example pins OpenRouter through the local xray proxy and gates delegation with `subagents.modelScope` |
 | Model cap check | `pi-models-check` probes every id in the delegation allow list against the provider, so a catalog entry is never mistaken for a served model |
 | Russian prose check | `ru-spellcheck` catches Latin homoglyphs inside Cyrillic words and dictionary misses in Russian text, so a flash-tier model's corrupted prose is caught before it is published |
+| Search guard | `rg` wrapper refuses `-r`/`--replace` (a substitution, not recursion) and an empty pattern, so a search cannot silently rewrite or flood the code an agent is reading |
 | Voice dictation | Micme wired to the local [Handy](https://handy.computer) CLI — `alt+m` to dictate, no cloud STT, no API key |
 | Browser automation | Playwright MCP server for interactive UAT on a private Xvfb display (no focus stealing), with a `browser-uat` skill and `uat.sh` environment CLI |
 | Themes | `nebula-pulse`, `opencode`, `tokyo-night`, `one-dark-pro`, and more |
@@ -60,13 +61,18 @@ Do **not** install this checkout as an active Pi package in normal use. Loading 
 - `bin/ru-spellcheck` — deterministic Russian prose checker (homoglyphs + hunspell `ru_RU`)
   - `--homoglyph-only` flags Latin letters inside Cyrillic words (`лоkalной`, `восстанóвленное`, `обéих`) with no dictionary and no false positives; the full run also reports words missing from `ru_RU` with suggestions
   - code spans, fenced blocks, URLs, paths, and filenames are masked, so identifiers are never flagged
-  - `--add СЛОВО` grows the allow list in `${XDG_CONFIG_HOME:-~/.config}/ru-spellcheck/allow.txt`; the repo ships a seed copy in `config/ru-spellcheck/allow.txt` that a restore installs only when absent
+  - `--add СЛОВО` inside a repository grows that repository's own `.ru-spellcheck-allow` (committed with the code, found upwards from the checked file, applied on top of the personal list); `--add-personal` keeps the machine-wide `${XDG_CONFIG_HOME:-~/.config}/ru-spellcheck/allow.txt`, which the repo ships as a seed copy in `config/ru-spellcheck/allow.txt` that a restore installs only when absent
+  - `tests/ru-spellcheck-repo-dict.sh` checks the project dictionary and both `--add` targets on a throwaway repository
   - needs `python3-enchant` and `hunspell-ru` for the full run; `--homoglyph-only` needs neither, so it also works under a project venv that shadows `python3`
   - exit 1 on findings, so it can gate a publish step
 - `bin/pi-models-check` — probes `subagents.modelScope.allow` against the provider
   - `max_tokens: 1` per id, key from the environment or `models.json`; prints 200/404 per model
   - turns "the catalog lists it" into "the provider answered", which is the only evidence that matters under a workspace guardrail
   - exit 1 on any 404, so it can gate a restore or a CI run
+- `bin/rg` — ripgrep wrapper that refuses two calls which look like a search and are not
+  - `-r`/`--replace` substitutes the match (`rg -rn 'x'` rewrites every match into `n`); rg recurses by default, so the flag is never needed. Exit 2 with the hint `-n` or `-l`
+  - an empty pattern matches every line — one such call put 18 829 lines into an agent's context. Exit 2
+  - everything else is passed through untouched; the real binary comes from `PI_REAL_RG`, `/usr/bin/rg`, or the rest of `PATH`
 - `extensions/` — versioned copies of custom Pi extensions (each one has its own note in [Feature audit](#feature-audit); the guard rules of `path-guard` are covered by `node --test tests/path-guard.test.mjs`)
   - themed startup welcome card with `/welcome updates on|off`
   - `/context` usage breakdown for startup tokens, messages, and tool calls (scrollback output; not added to model context)
@@ -221,6 +227,7 @@ This installs:
 - compact launcher `bin/pi` into `~/.local/bin/pi`
 - `bin/pi-models-check` into `~/.local/bin/pi-models-check`
 - `bin/ru-spellcheck` into `~/.local/bin/ru-spellcheck`, plus the seed allow list into `~/.config/ru-spellcheck/allow.txt`
+- `bin/rg` into `~/.local/bin/rg`, which shadows `/usr/bin/rg` for every shell that has `~/.local/bin` first in `PATH`
 
 It also removes any legacy settings entry that points Pi at this repo as an active package.
 
@@ -463,6 +470,20 @@ panels are pinned there to ids inside the workspace cap; the file is versioned h
 The enforcement layer behind both is `subagents.modelScope` in `settings.json`, and `pi-models-check`
 proves the allow list against the provider. Background and the evidence:
 [docs/pstack-on-pi.md](docs/pstack-on-pi.md#model-slugs-and-why-a-fan-out-dies-outside-the-cap).
+
+### `/review-loop`: the reviewer stays in its own directory
+
+`patches/pi-subagents-review-loop-scope.sh` adds one paragraph to the packaged `/review-loop`
+prompt: a reviewer works only in the directory it was given and must not read, quote, or claim the
+uncommitted work of a sibling worktree. `cwd` alone is not enough — `git worktree list` invites the
+detour by itself, and a reviewer that took it reported 13 dirty files of another session as findings
+about the diff it was given (#15674 п.3). The edit is idempotent and survives `pi update --extensions`
+through `install.sh`:
+
+```bash
+./patches/pi-subagents-review-loop-scope.sh --check     # exit 1 if the paragraph is missing
+./patches/pi-subagents-review-loop-scope.sh             # apply
+```
 
 ## Voice dictation (Handy + Micme)
 
