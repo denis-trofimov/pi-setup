@@ -50,6 +50,7 @@ Do **not** install this checkout as an active Pi package in normal use. Loading 
 | Themes | `nebula-pulse`, `opencode`, `tokyo-night`, `one-dark-pro`, and more |
 | Skills | Portable backups of installed Pi/agent skills |
 | Smoke test | Docker restore/sync contract test in `tests/docker-e2e.sh` |
+| Guard rules test | `node --test tests/path-guard.test.mjs` — правила блокировки путей в `write`/`edit` без запуска Pi |
 
 - `bin/pi` — compact Pi launcher wrapper
   - one-line major/minor update notices instead of large startup boxes
@@ -66,7 +67,7 @@ Do **not** install this checkout as an active Pi package in normal use. Loading 
   - `max_tokens: 1` per id, key from the environment or `models.json`; prints 200/404 per model
   - turns "the catalog lists it" into "the provider answered", which is the only evidence that matters under a workspace guardrail
   - exit 1 on any 404, so it can gate a restore or a CI run
-- `extensions/` — versioned copies of custom Pi extensions
+- `extensions/` — versioned copies of custom Pi extensions (each one has its own note in [Feature audit](#feature-audit); the guard rules of `path-guard` are covered by `node --test tests/path-guard.test.mjs`)
   - themed startup welcome card with `/welcome updates on|off`
   - `/context` usage breakdown for startup tokens, messages, and tool calls (scrollback output; not added to model context)
   - `/filechanges` review/accept/decline workflow for Pi-made `edit`/`write` changes
@@ -304,6 +305,13 @@ A locally archived skill (`~/.pi/agent/skills-archive/...`) is therefore safe: i
 
 ## Manual tests
 
+The guard rules of `extensions/path-guard.ts` are plain JavaScript (`extensions/path-guard-core.mjs`),
+so they run under the Node test runner without Pi, a model, or a session:
+
+```bash
+node --test tests/path-guard.test.mjs
+```
+
 Run the Docker end-to-end smoke test when you want to verify the setup/restore contract without adding CI:
 
 ```bash
@@ -334,6 +342,10 @@ This repo currently includes these Pi customizations.
 ### Transcript rendering
 
 - `extensions/collapse-bash.ts` overrides the built-in `bash` renderers so each shell call takes one line: `$ npm test ✓ 0.8s` (or `✗` on failure). `Ctrl+O` still expands the full output.
+
+### Tool safety
+
+- `extensions/path-guard.ts` blocks `write`/`edit` calls whose `path` carries shell metacharacters (`>`, `|`, `;`, `` ` ``, `$(…)`, globs) or points outside cwd, `$HOME` and `/tmp`. A path is not a command: `/home/denis/work 2>/dev/null` once created the directory `/home/denis/work 2>` in the home directory, and it stayed unnoticed for twenty tool calls (#15723 п.5). The rules live in `extensions/path-guard-core.mjs` (no Pi API), so they are testable without a session: `node --test tests/path-guard.test.mjs`.
 
 ### Commands added by extensions
 
