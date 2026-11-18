@@ -517,17 +517,17 @@ uat.sh login — log in on the server side and save the browser state
                           config ($BASE_CONFIG → browser.contextOptions.proxy, and
                           UAT_PLAYWRIGHT_CONFIG moves that file, as for the wrapper)
   --no-proxy              start the browser with --no-proxy-server even when the base
-                          config names a proxy (without it Chromium takes the proxy
-                          from HTTP_PROXY and the loopback times out)
+                          config names a proxy: that flag is the only way to pin the
+                          direct route, otherwise Chromium may take a proxy from the
+                          system settings
   --keep-host             keep the URL host as given (default: 127.0.0.1 → localhost)
   --dry-run               check everything, do not touch the browser
 
   Proxy: the MCP browser reaches the stand through the proxy in the base config,
-  while a bare chromium.launch() goes direct — with HTTP_PROXY exported in the
-  session the loopback is routed through the proxy and the page times out
-  (#15799 п.1). The same proxy is used here, so login and MCP take one route.
-  Chromium has no "direct" mode of its own: --no-proxy is passed to it as
-  --no-proxy-server, otherwise the session proxy would still be used.
+  while this command starts a browser of its own — the two can end up on
+  different routes, which is what timed the login out in #15799 п.1. The same
+  proxy is used here, so login and MCP take one route. Chromium has no "direct"
+  mode of its own: --no-proxy is passed to it as --no-proxy-server.
 
   Host: the saved storage state is domain-scoped, so a login made on 127.0.0.1 is a
   guest in a browser that opens localhost. The loopback host is rewritten to
@@ -567,9 +567,10 @@ EOF
       [[ -n "$proxy_server" ]] \
         || proxy_server="$(jq -r '.browser.contextOptions.proxy.server // empty' "$BASE_CONFIG" 2>/dev/null || true)"
       proxy_bypass="$(jq -r '.browser.contextOptions.proxy.bypass // empty' "$BASE_CONFIG" 2>/dev/null || true)"
-    elif [[ -f "$BASE_CONFIG" ]]; then
+    elif [[ -f "$BASE_CONFIG" && -z "$proxy_server" ]]; then
       # Silent here would be the original defect again: the wrapper passes the config
       # through without jq, so the MCP browser takes the proxy while the login goes direct.
+      # With --proxy-server the route is known, and the warning would be a lie.
       printf 'login: jq не найден — прокси из %s не прочитан, вход пойдёт напрямую\n' "$BASE_CONFIG" >&2
     fi
   else
@@ -592,7 +593,7 @@ EOF
     # Playwright accepts userinfo in the proxy URL; printing it verbatim would put the
     # password into the transcript, which is the one thing this command exists to avoid.
     local shown_proxy
-    shown_proxy="$(printf '%s' "$proxy_server" | sed -E 's#//[^/@]*:[^/@]*@#//***@#')"
+    shown_proxy="$(printf '%s' "$proxy_server" | sed -E 's#//[^/@]*@#//***@#')"
     printf 'login: proxy %s%s\n' "$shown_proxy" "${proxy_bypass:+ (bypass: $proxy_bypass)}"
   elif [[ "$no_proxy" -eq 1 ]]; then
     printf 'login: proxy none — the browser is started with --no-proxy-server\n'

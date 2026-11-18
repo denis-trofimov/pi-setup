@@ -61,8 +61,10 @@ module.exports = {
 };
 EOF
 
-# A wrapper override would make the test read the developer's real config instead of the fixture.
-run() { env -u UAT_LOGIN_URL -u UAT_LOGIN_ENV -u UAT_PLAYWRIGHT_CONFIG "$@" 2>&1; }
+# A wrapper override or a session URL would make the test read the developer's real values.
+# HOME is faked too: `npm root -g` writes a log into $HOME/.npm on every launch.
+mkdir -p "$WORK/home"
+run() { env -u UAT_LOGIN_URL -u UAT_LOGIN_ENV -u UAT_PLAYWRIGHT_CONFIG HOME="$WORK/home" "$@" 2>&1; }
 
 # --- what the command resolves and prints (--dry-run) -----------------------
 out="$(run bash "$UAT" login --url http://127.0.0.1/admin/login/sign-in --env "$env_file" --profile local --dry-run)" \
@@ -101,6 +103,36 @@ out="$(run bash "$UAT" login --url http://localhost/admin/login/sign-in --env "$
 grep -q 'proxy none' <<<"$out" || fail "без base config прокси обязан быть пустым: $out"
 mv "$WORK/playwright-mcp.json" "$PI_HOME/playwright-mcp.json"
 
+# The wrapper's own override (UAT_PLAYWRIGHT_CONFIG) moves the base config for login as well:
+# reading a different file than the wrapper is how the two routes diverge again.
+cat > "$WORK/alt-config.json" <<'EOF'
+{"browser": {"contextOptions": {"proxy": {"server": "http://alt-proxy:9999", "bypass": "localhost"}}}}
+EOF
+out="$(run UAT_PLAYWRIGHT_CONFIG="$WORK/alt-config.json" \
+    bash "$UAT" login --url http://localhost/admin/login/sign-in --env "$env_file" --dry-run)" \
+    || fail "dry run с UAT_PLAYWRIGHT_CONFIG упал: $out"
+grep -q 'proxy http://alt-proxy:9999 (bypass: localhost)' <<<"$out" \
+    || fail "UAT_PLAYWRIGHT_CONFIG проигнорирован: $out"
+
+# Without jq the proxy cannot be read from the config, and silence there is the original defect:
+# the wrapper passes the config through anyway, so the MCP browser would take the proxy alone.
+mkdir -p "$WORK/bin-nojq"
+for tool in dirname sed grep cut tr head cp chmod mkdir node cat sort tail wc; do
+    ln -sf "$(command -v "$tool")" "$WORK/bin-nojq/$tool"
+done
+out="$(env -u UAT_LOGIN_URL -u UAT_LOGIN_ENV -u UAT_PLAYWRIGHT_CONFIG HOME="$WORK/home" \
+    PATH="$WORK/bin-nojq" /bin/bash "$UAT" login --url http://localhost/admin/login/sign-in \
+    --env "$env_file" --dry-run 2>&1)" || fail "dry run без jq упал: $out"
+grep -q 'jq не найден' <<<"$out" || fail "отсутствие jq не названо: $out"
+
+# With --proxy-server the route is known, so the jq warning would be a lie.
+out="$(env -u UAT_LOGIN_URL -u UAT_LOGIN_ENV -u UAT_PLAYWRIGHT_CONFIG HOME="$WORK/home" \
+    PATH="$WORK/bin-nojq" /bin/bash "$UAT" login --url http://localhost/admin/login/sign-in \
+    --env "$env_file" --proxy-server http://proxy.example:3128 --dry-run 2>&1)" \
+    || fail "dry run без jq с --proxy-server упал: $out"
+grep -q 'jq не найден' <<<"$out" && fail "предупреждение про jq при заданном --proxy-server: $out"
+grep -q 'proxy http://proxy.example:3128' <<<"$out" || fail "--proxy-server потерян без jq: $out"
+
 # The proxy URL may carry credentials: they must not reach the transcript.
 cat > "$PI_HOME/playwright-mcp.json" <<'EOF'
 {"browser": {"contextOptions": {"proxy": {"server": "http://uat-user:uat-secret@proxy.example:3128"}}}}
@@ -109,6 +141,13 @@ out="$(run bash "$UAT" login --url http://localhost/admin/login/sign-in --env "$
     || fail "dry run с userinfo в прокси упал: $out"
 grep -q 'uat-secret' <<<"$out" && fail "пароль прокси попал в вывод: $out"
 grep -qF 'proxy http://***@proxy.example:3128' <<<"$out" || fail "прокси не замаскирован: $out"
+# Userinfo without a password is still userinfo.
+cat > "$PI_HOME/playwright-mcp.json" <<'EOF'
+{"browser": {"contextOptions": {"proxy": {"server": "http://uat-user@proxy.example:3128"}}}}
+EOF
+out="$(run bash "$UAT" login --url http://localhost/admin/login/sign-in --env "$env_file" --dry-run)" \
+    || fail "dry run с логином без пароля упал: $out"
+grep -q 'uat-user' <<<"$out" && fail "логин прокси попал в вывод: $out"
 cat > "$PI_HOME/playwright-mcp.json" <<'EOF'
 {
   "browser": {

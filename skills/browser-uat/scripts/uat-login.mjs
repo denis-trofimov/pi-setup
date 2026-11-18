@@ -50,14 +50,15 @@ const codeField = env.UAT_LOGIN_CODE_FIELD || '[name="LoginForm[code]"]';
 const sendSelector = env.UAT_LOGIN_SEND_SELECTOR || '';
 const submitSelector = env.UAT_LOGIN_SUBMIT_SELECTOR || 'button[type=submit]';
 const success = env.UAT_LOGIN_SUCCESS || '/admin';
-// The MCP browser reaches the stand through the proxy in the base config, while a bare
-// chromium.launch() goes direct; with HTTP_PROXY exported in the session Chromium routes the
-// loopback through the proxy too and page.goto times out (#15799 п.1). Same proxy here, so the
-// login and the MCP browser take the same route.
+// The MCP browser reaches the stand through the proxy in the base config, while this script
+// starts a browser of its own — so the login can end up on a different route, which is what made
+// page.goto time out in #15799 п.1. Passing the same proxy keeps one route; --no-proxy-server is
+// the only way to guarantee a direct one, because otherwise Chromium may take a proxy from the
+// system settings.
 const proxyServer = env.UAT_LOGIN_PROXY_SERVER || '';
 const proxyBypass = env.UAT_LOGIN_PROXY_BYPASS || '';
-// Chromium has no "direct" switch of its own: without --no-proxy-server it still picks the
-// proxy up from the environment, which is the timeout this script works around.
+// Chromium has no "direct" switch of its own: --no-proxy-server is the only way to pin the
+// direct route, so it is passed explicitly instead of relying on the environment.
 const noProxy = env.UAT_LOGIN_NO_PROXY === '1';
 
 // "Under --success" is not enough on its own: with the default /admin the login

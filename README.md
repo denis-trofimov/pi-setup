@@ -614,17 +614,19 @@ drives the sign-in form in a headless browser, and saves the Playwright storage
 state the MCP server loads on its next start. Two things it gets right by default:
 
 - **Proxy** — taken from `browser.contextOptions.proxy` in
-  `~/.pi/agent/playwright-mcp.json`, the same file the MCP wrapper reads. A bare
-  `chromium.launch()` goes direct, and with `HTTP_PROXY` exported in the session
-  Chromium routes the loopback through the proxy, so the sign-in page times out
-  (#15799 п.1). `--proxy-server URL` overrides the server, `--no-proxy` goes
-  direct.
+  `~/.pi/agent/playwright-mcp.json` (or `UAT_PLAYWRIGHT_CONFIG`), the same file the
+  MCP wrapper reads. The login starts a browser of its own, so the two can end up
+  on different routes — that is what timed the sign-in page out in #15799 п.1.
+  `--proxy-server URL` overrides the server; `--no-proxy` passes
+  `--no-proxy-server`, which is the only way to pin the direct route, because
+  otherwise Chromium may take a proxy from the system settings.
 - **Host** — the saved state is domain-scoped, so a login made on `127.0.0.1` is
   a guest in a browser that opens `localhost`. The loopback host is rewritten to
   `localhost` (the port is kept) and the cookie domains are printed after the
   login; `--keep-host` leaves the URL alone.
 
-`tests/browser-uat-login-proxy.sh` checks both on `--dry-run`, without a browser.
+`tests/browser-uat-login-proxy.sh` checks the resolved values on `--dry-run` and the options
+`chromium.launch()` actually receives, through a stub Playwright package — no browser, no network.
 
 Two sharp edges are worth repeating:
 

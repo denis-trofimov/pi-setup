@@ -27,8 +27,9 @@ body): zero false positives, exit 1 on a hit. It sees only script mixing, so a l
 a hand-off note, a README, a task description — passes it while losing its vowels (сесии,
 велечину, скрыпт), and that class needs the dictionary. A long input is therefore refused with
 exit 3 and a hint to run the full check, rather than reported clean (#15799 п.2). The threshold
-is 40 lines or 500 tokens (whitespace-separated, code and paths included), whichever comes first,
-counted over all inputs together; `--allow-long` bypasses it on purpose. The refusal is checked
+is 40 lines or 500 tokens, whichever comes first, counted over all inputs together — a token is
+what the checker splits on (whitespace and punctuation, code and paths included), so the count runs
+ahead of `wc -w` on prose with dashes and commas; `--allow-long` bypasses it on purpose. The refusal is checked
 before any output, so `--json --homoglyph-only` on a long input also gives exit 3 and an empty
 stdout rather than a partial report.
 
@@ -336,7 +337,7 @@ def main(argv):
         if lines > MAX_SHORT_LINES or words > MAX_SHORT_WORDS:
             print(
                 f"ru-spellcheck: --homoglyph-only видит только латинские гомоглифы, а вход — {lines} строк"
-                f" / {words} слов: редукция гласных так не ловится",
+                f" / {words} токенов: редукция гласных так не ловится",
                 file=sys.stderr,
             )
             print(
