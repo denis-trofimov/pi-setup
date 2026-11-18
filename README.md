@@ -60,7 +60,7 @@ Do **not** install this checkout as an active Pi package in normal use. Loading 
   - preserves Pi's native themed header and loaded skills/extensions/themes listing
 - `bin/ru-spellcheck` — deterministic Russian prose checker (homoglyphs + hunspell `ru_RU`)
   - `--homoglyph-only` flags Latin letters inside Cyrillic words (`лоkalной`, `восстанóвленное`, `обéих`) with no dictionary and no false positives; the full run also reports words missing from `ru_RU` with suggestions
-  - the gate is meant for short prose: an input longer than 40 lines or 500 words exits 3 and asks for the full run, because vowel reduction (`сесии`, `велечину`, `скрыпт`) is invisible without the dictionary; `--allow-long` bypasses that on purpose (#15799 п.2)
+  - the gate is meant for short prose: an input longer than 40 lines or 500 tokens exits 3 and asks for the full run, because vowel reduction (`сесии`, `велечину`, `скрыпт`) is invisible without the dictionary; `--allow-long` bypasses that on purpose (#15799 п.2)
   - code spans, fenced blocks, URLs, paths, and filenames are masked, so identifiers are never flagged
   - `--add СЛОВО` inside a repository grows that repository's own `.ru-spellcheck-allow` (committed with the code, found upwards from the checked file, applied on top of the personal list); `--add-personal` keeps the machine-wide `${XDG_CONFIG_HOME:-~/.config}/ru-spellcheck/allow.txt`, which the repo ships as a seed copy in `config/ru-spellcheck/allow.txt` that a restore installs only when absent
   - `tests/ru-spellcheck-repo-dict.sh` checks the project dictionary and both `--add` targets on a throwaway repository; `tests/ru-spellcheck-long-input.sh` checks the long-input refusal (exit 3), the short-text gate and `--allow-long`

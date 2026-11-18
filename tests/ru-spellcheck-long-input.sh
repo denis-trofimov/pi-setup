@@ -2,7 +2,7 @@
 # ru-spellcheck: the --homoglyph-only gate refuses a long input instead of reporting it clean
 # (#15799 п.2).
 #
-# The gate sees only script mixing. A hand-off document passed it with 60 vowel-reduction errors
+# The gate sees only script mixing. A hand-off document passed it with 55 vowel-reduction errors
 # (сесии, велечину, скрыпт) and was green, because that class needs the dictionary. So a long input
 # now exits 3 with a hint to run the full check; short prose (a chat message, a Redmine note) still
 # passes with one command, and `--allow-long` is the deliberate bypass.

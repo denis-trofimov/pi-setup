@@ -7,7 +7,12 @@
 # on 127.0.0.1 — three runs out of three. And the saved storage state is domain-scoped, so a login
 # made on 127.0.0.1 is a guest in a browser that opens localhost.
 #
-# Everything here runs with --dry-run: no browser, no network, no credentials.
+# Two layers here:
+#   * --dry-run checks what the command resolves and prints (no browser at all);
+#   * a stub `playwright` module records the options chromium.launch() actually received, so the
+#     proxy is checked where it matters, not only in the log line. Without that layer, deleting the
+#     env pass-through or the `proxy:` field keeps every assertion green.
+#
 # Exit 0 — all checks passed; 1 — a check failed.
 set -euo pipefail
 
@@ -19,6 +24,7 @@ trap 'rm -rf "$WORK"' EXIT
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
 [[ -x "$UAT" ]] || fail "нет $UAT"
+command -v jq >/dev/null || fail "нужен jq (login читает им base config)"
 
 export PI_HOME="$WORK/pi-home"
 mkdir -p "$PI_HOME"
@@ -39,8 +45,26 @@ EOF
 env_file="$WORK/.env"
 printf 'ADMIN_PHONE_NUMBER=+79990000000\nADMIN_PHONE_CODE=1234\n' > "$env_file"
 
-# `login` on a loopback URL: host rewritten, proxy taken from the base config.
-run() { env -u UAT_LOGIN_URL -u UAT_LOGIN_ENV "$@" 2>&1; }
+# The stub Playwright package: records launch options, then fails like an unreachable page.
+mkdir -p "$WORK/fake-pw/playwright"
+cat > "$WORK/fake-pw/playwright/index.js" <<'EOF'
+const fs = require('node:fs');
+module.exports = {
+  chromium: {
+    launch: async (options) => {
+      fs.writeFileSync(process.env.STUB_OUT, JSON.stringify(options));
+      const page = { setDefaultTimeout() {}, goto: async () => { throw new Error('stub: no network'); } };
+      const context = { newPage: async () => page, close: async () => {}, storageState: async () => ({ cookies: [] }) };
+      return { newContext: async () => context, close: async () => {} };
+    },
+  },
+};
+EOF
+
+# A wrapper override would make the test read the developer's real config instead of the fixture.
+run() { env -u UAT_LOGIN_URL -u UAT_LOGIN_ENV -u UAT_PLAYWRIGHT_CONFIG "$@" 2>&1; }
+
+# --- what the command resolves and prints (--dry-run) -----------------------
 out="$(run bash "$UAT" login --url http://127.0.0.1/admin/login/sign-in --env "$env_file" --profile local --dry-run)" \
     || fail "dry run упал: $out"
 grep -q 'host 127.0.0.1 → localhost' <<<"$out" || fail "хост не переписан: $out"
@@ -77,7 +101,56 @@ out="$(run bash "$UAT" login --url http://localhost/admin/login/sign-in --env "$
 grep -q 'proxy none' <<<"$out" || fail "без base config прокси обязан быть пустым: $out"
 mv "$WORK/playwright-mcp.json" "$PI_HOME/playwright-mcp.json"
 
-# A missing credentials file is a usage error, not a browser run.
+# The proxy URL may carry credentials: they must not reach the transcript.
+cat > "$PI_HOME/playwright-mcp.json" <<'EOF'
+{"browser": {"contextOptions": {"proxy": {"server": "http://uat-user:uat-secret@proxy.example:3128"}}}}
+EOF
+out="$(run bash "$UAT" login --url http://localhost/admin/login/sign-in --env "$env_file" --dry-run)" \
+    || fail "dry run с userinfo в прокси упал: $out"
+grep -q 'uat-secret' <<<"$out" && fail "пароль прокси попал в вывод: $out"
+grep -qF 'proxy http://***@proxy.example:3128' <<<"$out" || fail "прокси не замаскирован: $out"
+cat > "$PI_HOME/playwright-mcp.json" <<'EOF'
+{
+  "browser": {
+    "contextOptions": {
+      "viewport": null,
+      "proxy": {
+        "server": "http://127.0.0.1:10808",
+        "bypass": "localhost,127.0.0.1"
+      }
+    }
+  }
+}
+EOF
+
+# --- what chromium.launch() actually receives (stub Playwright) -------------
+launch_opts() {
+    local out_file="$WORK/launch.json" rc=0
+    : > "$out_file"
+    STUB_OUT="$out_file" UAT_PLAYWRIGHT_ROOT="$WORK/fake-pw" \
+        run bash "$UAT" login --env "$env_file" --profile local --url http://localhost/admin/login/sign-in "$@" \
+        >/dev/null 2>&1 || rc=$?
+    [[ -s "$out_file" ]] || fail "заглушка Playwright не получила launch (код $rc)"
+    cat "$out_file"
+}
+
+opts="$(launch_opts)"
+jq -e '.proxy.server == "http://127.0.0.1:10808"' <<<"$opts" >/dev/null \
+    || fail "прокси не дошёл до chromium.launch: $opts"
+jq -e '.proxy.bypass == "localhost,127.0.0.1"' <<<"$opts" >/dev/null \
+    || fail "bypass не дошёл до chromium.launch: $opts"
+jq -e '.headless == true' <<<"$opts" >/dev/null || fail "headless потерян: $opts"
+
+opts="$(launch_opts --no-proxy)"
+jq -e '.proxy == null' <<<"$opts" >/dev/null || fail "--no-proxy всё равно передал прокси: $opts"
+jq -e '.args | index("--no-proxy-server")' <<<"$opts" >/dev/null \
+    || fail "--no-proxy обязан ставить --no-proxy-server, иначе Chromium возьмёт прокси из окружения: $opts"
+
+opts="$(launch_opts --proxy-server http://proxy.example:3128)"
+jq -e '.proxy.server == "http://proxy.example:3128"' <<<"$opts" >/dev/null \
+    || fail "--proxy-server не дошёл до chromium.launch: $opts"
+
+# --- usage errors ----------------------------------------------------------
 set +e
 out="$(run bash "$UAT" login --url http://localhost/admin/login/sign-in --env "$WORK/absent.env" --dry-run)"
 status=$?
@@ -85,4 +158,4 @@ set -e
 [[ "$status" -ne 0 ]] || fail "отсутствующий .env обязан падать"
 grep -q 'no credentials file' <<<"$out" || fail "сообщение про .env не напечатано: $out"
 
-echo "OK: прокси берётся из base config (с переопределением), хост 127.0.0.1 → localhost, --keep-host и --no-proxy работают"
+echo "OK: прокси из base config доходит до chromium.launch, --no-proxy ставит --no-proxy-server, хост 127.0.0.1 → localhost, --keep-host работает, userinfo замаскирован"

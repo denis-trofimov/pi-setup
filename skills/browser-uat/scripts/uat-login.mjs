@@ -25,6 +25,8 @@
 //   UAT_LOGIN_TIMEOUT         step timeout in ms, default 20000
 //   UAT_LOGIN_PROXY_SERVER    proxy for the login browser (optional)
 //   UAT_LOGIN_PROXY_BYPASS    proxy bypass list, comma-separated (optional)
+//   UAT_LOGIN_NO_PROXY        1 — start the browser with --no-proxy-server, so the
+//                             session's HTTP_PROXY is not used even for the loopback
 //   UAT_PLAYWRIGHT_ROOT       directory containing the `playwright` package
 //                             (default: `npm root -g`)
 //
@@ -54,6 +56,9 @@ const success = env.UAT_LOGIN_SUCCESS || '/admin';
 // login and the MCP browser take the same route.
 const proxyServer = env.UAT_LOGIN_PROXY_SERVER || '';
 const proxyBypass = env.UAT_LOGIN_PROXY_BYPASS || '';
+// Chromium has no "direct" switch of its own: without --no-proxy-server it still picks the
+// proxy up from the environment, which is the timeout this script works around.
+const noProxy = env.UAT_LOGIN_NO_PROXY === '1';
 
 // "Under --success" is not enough on its own: with the default /admin the login
 // page itself is /admin/login/index, so a rejected code would look like a
@@ -110,7 +115,8 @@ let browser;
 try {
   browser = await chromium.launch({
     headless: true,
-    ...(proxyServer
+    ...(noProxy ? { args: ['--no-proxy-server'] } : {}),
+    ...(proxyServer && !noProxy
       ? { proxy: proxyBypass ? { server: proxyServer, bypass: proxyBypass } : { server: proxyServer } }
       : {}),
   });
@@ -182,9 +188,9 @@ try {
   console.error('uat-login: ' + String(error).split('\n')[0]);
   // The measured failure of #15799 п.1: a session proxy with no proxy on the browser times out on
   // the loopback. Name it instead of leaving a bare TimeoutError.
-  if (!proxyServer && (env.HTTP_PROXY || env.HTTPS_PROXY || env.http_proxy || env.https_proxy)) {
+  if (!proxyServer && !noProxy && (env.HTTP_PROXY || env.HTTPS_PROXY || env.http_proxy || env.https_proxy)) {
     console.error(
-      'uat-login: в окружении выставлен прокси, а браузер пошёл напрямую — задай прокси из'
+      'uat-login: в окружении выставлен прокси, а браузер пошёл без него — задай прокси из'
         + ' playwright-mcp.json (uat.sh login берёт его сам) или UAT_LOGIN_PROXY_SERVER'
     );
   }

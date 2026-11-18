@@ -9,7 +9,7 @@ Usage:
   ru-spellcheck FILE...           check files (Markdown/Textile/plain)
   cmd | ru-spellcheck -           check stdin
   ru-spellcheck --homoglyph-only F   only the hard error class (exit 1 on hit); an input longer
-                                     than 40 lines / 500 words exits 3 — see "Gate" below
+                                     than 40 lines / 500 tokens exits 3 — see "Gate" below
   ru-spellcheck --allow-long F    keep --homoglyph-only on a long input (deliberate bypass)
   ru-spellcheck --add СЛОВО       add a known-good word to the project's allowlist
   ru-spellcheck --add-personal СЛОВО  add it to the personal allowlist instead
@@ -27,7 +27,10 @@ body): zero false positives, exit 1 on a hit. It sees only script mixing, so a l
 a hand-off note, a README, a task description — passes it while losing its vowels (сесии,
 велечину, скрыпт), and that class needs the dictionary. A long input is therefore refused with
 exit 3 and a hint to run the full check, rather than reported clean (#15799 п.2). The threshold
-is 40 lines or 500 words, whichever comes first; `--allow-long` bypasses it on purpose.
+is 40 lines or 500 tokens (whitespace-separated, code and paths included), whichever comes first,
+counted over all inputs together; `--allow-long` bypasses it on purpose. The refusal is checked
+before any output, so `--json --homoglyph-only` on a long input also gives exit 3 and an empty
+stdout rather than a partial report.
 
 Exit: 0 clean, 1 findings, 2 usage/dictionary problem, 3 --homoglyph-only on a long input.
 Masked as non-prose: fenced code, `inline code`, URLs, HTML tags, paths, versions,

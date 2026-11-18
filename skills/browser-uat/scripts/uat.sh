@@ -20,7 +20,9 @@ SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 WRAPPER="$SCRIPT_DIR/playwright-mcp-xvfb.sh"
 PI_HOME="${PI_HOME:-$HOME/.pi/agent}"
 MCP_JSON="$PI_HOME/mcp.json"
-BASE_CONFIG="$PI_HOME/playwright-mcp.json"
+# UAT_PLAYWRIGHT_CONFIG is the wrapper's documented override; login reads the same file,
+# otherwise a user who moved the base config gets two different routes again (#15799 п.1).
+BASE_CONFIG="${UAT_PLAYWRIGHT_CONFIG:-$PI_HOME/playwright-mcp.json}"
 ARTIFACTS="${UAT_ARTIFACTS:-${TMPDIR:-/tmp}/browser-uat}"
 SCREEN="${UAT_SCREEN:-1920x1080x24}"
 # Saved logins: one storage state per profile. Deliberately OUTSIDE skills/: a
@@ -512,8 +514,11 @@ uat.sh login — log in on the server side and save the browser state
   --state PATH            write the state here instead of the profile path
   --timeout MS            per-step timeout, default 20000 (env UAT_LOGIN_TIMEOUT)
   --proxy-server URL      proxy for the login browser; default is the one in the base
-                          config ($BASE_CONFIG → browser.contextOptions.proxy)
-  --no-proxy              go direct even when the base config names a proxy
+                          config ($BASE_CONFIG → browser.contextOptions.proxy, and
+                          UAT_PLAYWRIGHT_CONFIG moves that file, as for the wrapper)
+  --no-proxy              start the browser with --no-proxy-server even when the base
+                          config names a proxy (without it Chromium takes the proxy
+                          from HTTP_PROXY and the loopback times out)
   --keep-host             keep the URL host as given (default: 127.0.0.1 → localhost)
   --dry-run               check everything, do not touch the browser
 
@@ -521,6 +526,8 @@ uat.sh login — log in on the server side and save the browser state
   while a bare chromium.launch() goes direct — with HTTP_PROXY exported in the
   session the loopback is routed through the proxy and the page times out
   (#15799 п.1). The same proxy is used here, so login and MCP take one route.
+  Chromium has no "direct" mode of its own: --no-proxy is passed to it as
+  --no-proxy-server, otherwise the session proxy would still be used.
 
   Host: the saved storage state is domain-scoped, so a login made on 127.0.0.1 is a
   guest in a browser that opens localhost. The loopback host is rewritten to
@@ -560,6 +567,10 @@ EOF
       [[ -n "$proxy_server" ]] \
         || proxy_server="$(jq -r '.browser.contextOptions.proxy.server // empty' "$BASE_CONFIG" 2>/dev/null || true)"
       proxy_bypass="$(jq -r '.browser.contextOptions.proxy.bypass // empty' "$BASE_CONFIG" 2>/dev/null || true)"
+    elif [[ -f "$BASE_CONFIG" ]]; then
+      # Silent here would be the original defect again: the wrapper passes the config
+      # through without jq, so the MCP browser takes the proxy while the login goes direct.
+      printf 'login: jq не найден — прокси из %s не прочитан, вход пойдёт напрямую\n' "$BASE_CONFIG" >&2
     fi
   else
     proxy_server=""
@@ -578,7 +589,13 @@ EOF
   printf 'login: profile %s, credentials %s/%s from %s\n' "$profile" "$phone_var" "$code_var" "$env_file"
   printf 'login: url %s\n' "$url"
   if [[ -n "$proxy_server" ]]; then
-    printf 'login: proxy %s%s\n' "$proxy_server" "${proxy_bypass:+ (bypass: $proxy_bypass)}"
+    # Playwright accepts userinfo in the proxy URL; printing it verbatim would put the
+    # password into the transcript, which is the one thing this command exists to avoid.
+    local shown_proxy
+    shown_proxy="$(printf '%s' "$proxy_server" | sed -E 's#//[^/@]*:[^/@]*@#//***@#')"
+    printf 'login: proxy %s%s\n' "$shown_proxy" "${proxy_bypass:+ (bypass: $proxy_bypass)}"
+  elif [[ "$no_proxy" -eq 1 ]]; then
+    printf 'login: proxy none — the browser is started with --no-proxy-server\n'
   else
     printf 'login: proxy none — direct connection\n'
   fi
@@ -601,6 +618,7 @@ EOF
   UAT_LOGIN_TIMEOUT="$timeout" \
   UAT_LOGIN_PROXY_SERVER="$proxy_server" \
   UAT_LOGIN_PROXY_BYPASS="$proxy_bypass" \
+  UAT_LOGIN_NO_PROXY="$no_proxy" \
   UAT_PLAYWRIGHT_ROOT="${UAT_PLAYWRIGHT_ROOT:-}" \
     node "$SCRIPT_DIR/uat-login.mjs"
 
