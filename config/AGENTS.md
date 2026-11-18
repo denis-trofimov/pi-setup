@@ -38,17 +38,26 @@ One hard gate, in user config; do not weaken it without the user asking.
   the cap, which is the intended behaviour, not an exemption. For `reviewer` the override is
   `deepseek-v4.1-flash-1017`, and it is the only deepseek variant its allow list accepts: naming
   `openrouter/deepseek/deepseek-v4.1-flash` (no `-1017`) passes the cap and fails the gate.
-- `reviewer`, `oracle`, and `evidence-auditor` all default to `deepseek-v4.1-flash-1017` at
-  thinking `medium`, and additionally carry a per-agent allow list, so a review cannot escalate to
-  `glm-5.2`. `reviewer` may name only `glm-5.3-flash` and `deepseek-v4.1-flash-1017`: no
-  full-strength escalation on a review seat. `oracle` and `evidence-auditor` also allow `glm-5.3`
-  for a review that has to be argued at full strength.
+- `reviewer`, `oracle`, and `evidence-auditor` all default to `deepseek-v4.1-flash-1017`, and
+  additionally carry a per-agent allow list, so a review cannot escalate to `glm-5.2`. Thinking:
+  `reviewer` and `oracle` at `high`, `evidence-auditor` at `low`. `reviewer` may name only
+  `glm-5.3-flash` and `deepseek-v4.1-flash-1017`: no full-strength escalation on a review seat.
+  `oracle` and `evidence-auditor` also allow `glm-5.3` for a review that has to be argued at full
+  strength.
+- **`medium` does not exist on most allowed models, and Pi clamps it UP, never down.**
+  `deepseek-v4.1-flash-1017` and `glm-5.3-flash` expose `off/low/high/max` (`glm-5.3`:
+  `low/high/max`); `z-ai/glm-5.2` exposes only `off/high/xhigh`, so even `low` becomes `high`.
+  `clampThinkingLevel` (pi-ai `dist/models.js`) scans upward from the requested level, so a `medium`
+  override on those ids silently buys the 16384-token `high` budget instead of 8192, and nothing
+  surfaces it. Levels per seat must be levels the model actually has: `medium` is real only on
+  `minimax-m3`, `minimax-m3.1-flash`, `ling-3.*`, `glm-4.7-flash`, `glm-5`, and `glm-5.1`. Verify by
+  running the configured pairs through `clampThinkingLevel`, not by reading the number you wrote.
 - `~/.pi/agent/pi-pstack-adapter.json` pins every pstack role and panel to a capped model (see the
   `Model roles` table of `pstack_adapter status`). `glm-5.3` is assigned only to `judgment`,
   `strongest-judgment`, and one seat of `arena-cross-judge-pool`; every runner, reviewer, and
-  `hillclimb` role runs `glm-5.3-flash`. The file carries no `modelFilter`: that filter also
-  blocked every delegation that named no model, which broke `code-review` and any skill that lets
-  a child inherit, so it was removed on purpose. `modelScope` is the gate.
+  `hillclimb` role runs `glm-5.3-flash` at thinking `low`. The file carries no `modelFilter`: that
+  filter also blocked every delegation that named no model, which broke `code-review` and any skill
+  that lets a child inherit, so it was removed on purpose. `modelScope` is the gate.
 - The table in `~/.pi/agent/docs/delegation-models.md` is a dated observation, not a standing
   fact. Re-verify it with `pi-models-check` (one `max_tokens: 1` request per id, exit 1 on 404)
   before trusting it after a provider or guardrail change. A 404 there is the cap, not local config.
