@@ -40,10 +40,11 @@ One hard gate, in user config; do not weaken it without the user asking.
   `openrouter/deepseek/deepseek-v4.1-flash` (no `-1017`) passes the cap and fails the gate.
 - `reviewer`, `oracle`, and `evidence-auditor` all default to `deepseek-v4.1-flash-1017`, and
   additionally carry a per-agent allow list, so a review cannot escalate to `glm-5.2`. Thinking:
-  `reviewer` and `oracle` at `high`, `evidence-auditor` at `low`. `reviewer` may name only
-  `glm-5.3-flash` and `deepseek-v4.1-flash-1017`: no full-strength escalation on a review seat.
-  `oracle` and `evidence-auditor` also allow `glm-5.3` for a review that has to be argued at full
-  strength.
+  `reviewer` and `oracle` at `high`, `evidence-auditor` at `off` (matching a claim against a fetched
+  excerpt is lookup, not dialogue, and `off` is a level deepseek-1017 actually has). `reviewer` may
+  name only `glm-5.3-flash` and `deepseek-v4.1-flash-1017`: no full-strength escalation on a review
+  seat. `oracle` and `evidence-auditor` also allow `glm-5.3` for a review that has to be argued at
+  full strength.
 - **`medium` does not exist on most allowed models, and Pi clamps it UP, never down.**
   `deepseek-v4.1-flash-1017` and `glm-5.3-flash` expose `off/low/high/max` (`glm-5.3`:
   `low/high/max`); `z-ai/glm-5.2` exposes only `off/high/xhigh`, so even `low` becomes `high`.
