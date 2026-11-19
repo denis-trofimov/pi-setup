@@ -44,21 +44,38 @@ const GIT_REMOTE_SHOW = /^git\s+(?:-C\s+(?:"[^"]*"|'[^']*'|\S+)\s+)?remote\s+sho
  */
 const WRAPPER = /^(sudo|command|exec|time|env)\b\s*/;
 const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=\S*\s+/;
-const FLAG = /^-{1,2}[^\s]+\s+(?:\S+\s+)?/;
+const FLAG = /^-{1,2}[^\s]+/;
+
+/**
+ * Флаги обёрток, у которых аргумент отдельным словом — свои у каждой обёртки: `-p` у `sudo` — prompt
+ * с аргументом, а у `time` — «portable output» без аргумента. Один общий список съедал `git`.
+ */
+const WRAPPER_ARGUMENT_FLAGS = {
+	sudo: new Set(["-u", "--user", "-g", "--group", "-p", "--prompt", "-h", "--host", "-U", "--other-user", "-C", "--close-from"]),
+	env: new Set(["-u", "--unset", "-C", "--chdir", "-S", "--split-string"]),
+	time: new Set(["-f", "--format", "-o", "--output"]),
+	command: new Set(),
+	exec: new Set(["-a"]),
+};
 
 function unwrapped(segment) {
 	let text = segment.trim();
+	let wrapperName = null;
 
 	for (;;) {
 		let next = null;
 		const wrapper = text.match(WRAPPER);
 		if (wrapper) {
+			wrapperName = wrapper[1];
 			next = text.slice(wrapper[0].length).trim();
 		} else if (ASSIGNMENT.test(text)) {
 			next = text.replace(ASSIGNMENT, "").trim();
 		} else if (FLAG.test(text)) {
-			// `env -u X git …`: флаг с аргументом. Применяется только к остатку, начинающемуся с `-`.
-			next = text.replace(FLAG, "").trim();
+			const flag = (text.match(FLAG) || [""])[0];
+			const rest = text.slice(flag.length).trim();
+			const takesArgument = wrapperName !== null
+				&& (WRAPPER_ARGUMENT_FLAGS[wrapperName] || new Set()).has(flag);
+			next = takesArgument ? rest.replace(/^\S+\s*/, "").trim() : rest;
 		}
 
 		if (next === null || next === text || next === "") return next ?? text;
@@ -93,6 +110,14 @@ export function splitSegments(command) {
 			continue;
 		}
 		const pair = command[i + 1];
+		// `2>&1`, `&>file`: `&` здесь часть перенаправления, а не фон — иначе конвейер после него
+		// разрезался бы, и `git branch -a 2>&1 | head` падал бы под правило «без фильтра».
+		const redirect = char === "&" && (command[i - 1] === ">" || pair === ">");
+		if (redirect) {
+			current += char;
+
+			continue;
+		}
 		if (char === ";" || char === "&" || (char === "|" && pair === "|")) {
 			segments.push(current);
 			current = "";

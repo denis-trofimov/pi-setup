@@ -104,3 +104,33 @@ test("одиночный & — конец команды, конвейер — �
 	assert.deepEqual(splitSegments("a && b"), ["a", "b"]);
 	assert.deepEqual(splitSegments("a | b"), ["a | b"]);
 });
+
+// Перенаправление `2>&1` не разрывает конвейер: `&` в нём — часть редиректа, а не фон.
+// Регрессия раунда 3: `git branch -a 2>&1 | head` блокировался, хотя фильтр в команде есть.
+test("редирект 2>&1 не разрывает конвейер и не даёт ложный блок", () => {
+	for (const command of [
+		"git branch -a 2>&1 | head",
+		"git branch -a 2>&1 | wc -l",
+		"git remote show origin 2>&1 | rg URL",
+	]) {
+		assert.equal(classifyCall(command).allowed, true, command);
+	}
+	assert.deepEqual(splitSegments("git branch -a 2>&1 | head"), ["git branch -a 2>&1 | head"]);
+});
+
+// Флаги обёрток снимаются по своей таблице: `-p` у `time` — без аргумента, у `sudo` — с ним.
+test("флаги обёрток не съедают сам git", () => {
+	for (const command of [
+		"sudo -n git branch -a",
+		"sudo -u deploy git branch -a",
+		"env -i git branch -a",
+		"env -u X git branch -a",
+		"time -p git branch -a",
+		"time -f %e git branch -a",
+		"command -p git branch -a",
+	]) {
+		assert.equal(classifyCall(command).allowed, false, command);
+	}
+	assert.equal(classifyCall("time make test").allowed, true);
+	assert.equal(classifyCall("sudo apt-get install -y jq").allowed, true);
+});
