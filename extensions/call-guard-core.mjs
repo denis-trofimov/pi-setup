@@ -26,13 +26,21 @@ const NOOP_SEGMENT = /^(?:true|:)\s*$|^exit(?:\s+0)?\s*$/;
 /** `cd <путь>` вместе с типичными перенаправлениями, которыми глушат ошибку перехода. */
 const CD_SEGMENT = /^cd\s+[^;&|]+?(?:\s+[012]?>>?\s*\S+|\s+2>&1)*\s*$/;
 
-/** Список веток/remote целиком: `-a`, `--all`, `-r`, `--remotes`, `git remote show <name>` без фильтра. */
-const GIT_BRANCH_LISTING = /\bgit\s+(?:-C\s+\S+\s+)?branch\b[^|;]*\s(?:-a|--all|-r|--remotes|--list)\b/;
-const GIT_REMOTE_SHOW = /\bgit\s+(?:-C\s+\S+\s+)?remote\s+show\b/;
+/**
+ * Список веток/remote целиком: `-a`, `--all`, `-r`, `--remotes`, `git remote show <name>` без фильтра.
+ *
+ * Якорь `^` и проверка по сегменту, а не по строке целиком: `rg -n "git branch -a"` — это поиск
+ * текста по репозиторию, а не вызов git, и блокировать его нельзя (такая строка живёт в самом
+ * call-guard-core.mjs).
+ */
+const GIT_BRANCH_LISTING = /^git\s+(?:-C\s+\S+\s+)?branch\b[^|;]*\s(?:-a|--all|-r|--remotes|--list)\b/;
+const GIT_REMOTE_SHOW = /^git\s+(?:-C\s+\S+\s+)?remote\s+show\b/;
 
 /**
- * Разбить команду на сегменты по `;`, `&&`, `||` вне кавычек. Полноценный шелл-парсер не нужен:
- * правило про пустой вызов смотрит только на простые цепочки, которыми его и ловили.
+ * Разбить команду на сегменты по `;`, `&&`, `||` вне кавычек.
+ *
+ * Одиночный `|` сегментом НЕ считается: конвейер — это один вызов, и «есть ли фильтр» решается
+ * внутри сегмента (`git branch -a | wc -l` — это один сегмент с фильтром).
  *
  * @param {string} command
  * @returns {string[]}
@@ -54,11 +62,11 @@ export function splitSegments(command) {
 			current += char;
 			continue;
 		}
-		if (char === ";" || char === "&" || char === "|") {
+		const pair = command[i + 1];
+		if (char === ";" || (char === "&" && pair === "&") || (char === "|" && pair === "|")) {
 			segments.push(current);
 			current = "";
-			// `&&`, `||`, `>>` — второй символ той же цепочки, третий поглощается как обычный.
-			if ((char === "&" || char === "|") && command[i + 1] === char) i += 1;
+			if (char !== ";") i += 1;
 			continue;
 		}
 		current += char;
@@ -95,21 +103,24 @@ export function classifyCall(command, options = {}) {
 		};
 	}
 
-	const hasPipe = /\|/.test(trimmed);
-	if (!hasPipe && GIT_BRANCH_LISTING.test(trimmed)) {
-		return {
-			allowed: false,
-			reason: "Вывод `git branch` без фильтра: список веток всего репозитория (2168 строк, 50 КБ).",
-			hint: "Добавьте фильтр: `| wc -l`, `| rg <шаблон>` или `| head`. Нужен весь список осознанно — PI_CALL_GUARD_ALLOW=1.",
-		};
-	}
+	for (const segment of segments) {
+		if (/\|/.test(segment)) continue;
 
-	if (!hasPipe && GIT_REMOTE_SHOW.test(trimmed)) {
-		return {
-			allowed: false,
-			reason: "Вывод `git remote show` без фильтра: десятки строк про каждый remote.",
-			hint: "Уточните вопрос: `git remote get-url origin`, `git remote show origin | rg <поле>`. Осознанно — PI_CALL_GUARD_ALLOW=1.",
-		};
+		if (GIT_BRANCH_LISTING.test(segment)) {
+			return {
+				allowed: false,
+				reason: "Вывод `git branch` без фильтра: список веток всего репозитория (2168 строк, 50 КБ).",
+				hint: "Добавьте фильтр: `| wc -l`, `| rg <шаблон>` или `| head`. Нужен весь список осознанно — PI_CALL_GUARD_ALLOW=1.",
+			};
+		}
+
+		if (GIT_REMOTE_SHOW.test(segment)) {
+			return {
+				allowed: false,
+				reason: "Вывод `git remote show` без фильтра: десятки строк про каждый remote.",
+				hint: "Уточните вопрос: `git remote get-url origin`, `git remote show origin | rg <поле>`. Осознанно — PI_CALL_GUARD_ALLOW=1.",
+			};
+		}
 	}
 
 	return { allowed: true };

@@ -12,7 +12,7 @@
 // Осознанный обход — PI_WRITE_GUARD_ALLOW=1.
 
 import { execFileSync } from "node:child_process";
-import { lstatSync } from "node:fs";
+import { realpathSync, statSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 
 import { isToolCallEventType, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -44,13 +44,23 @@ export default function writeGuard(pi: ExtensionAPI) {
 
 		const absolute = isAbsolute(target) ? target : resolve(ctx.cwd, target);
 
+		// stat, а не lstat: симлинк на крупный отслеживаемый файл — это та же перезапись, только цель
+		// в другом месте. Проверяется цель, и в находке называется она.
 		let stats;
 		try {
-			stats = lstatSync(absolute);
+			stats = statSync(absolute);
 		} catch {
 			return undefined; // нового файла нет — это и есть штатный случай `write`
 		}
 		if (!stats.isFile()) return undefined;
+
+		let target = absolute;
+		try {
+			target = realpathSync(absolute);
+		} catch {
+			// битый симлинк: писать по нему нельзя, но и сторожить нечего — решение за инструментом
+			return undefined;
+		}
 
 		// Размер в байтах, а не в символах: кириллица в UTF-8 занимает два байта, и сравнение
 		// по длине строки занижало бы старое содержимое вдвое.

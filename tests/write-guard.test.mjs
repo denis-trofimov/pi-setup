@@ -56,10 +56,6 @@ test("жёсткий пол 200 байт ловит миниатюризацию
 	assert.equal(classifyShrink({ oldBytes: 2000, newBytes: 600, tracked: true }).allowed, true);
 });
 
-test("симлинк не блокируется: перезаписывается цель, а не файл", () => {
-	assert.equal(classifyShrink({ oldBytes: LARGE, newBytes: 5, tracked: true, isSymlink: true }).allowed, true);
-});
-
 test("осознанный обход снимает блокировку", () => {
 	assert.equal(classifyShrink({ oldBytes: LARGE, newBytes: 5, tracked: true, allow: true }).allowed, true);
 });

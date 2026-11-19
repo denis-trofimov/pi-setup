@@ -35,13 +35,11 @@ export const ABSOLUTE_FLOOR_BYTES = 200;
  * @param {number} input.oldBytes — размер файла на диске до записи
  * @param {number} input.newBytes — размер нового содержимого
  * @param {boolean} input.tracked — файл отслеживается git
- * @param {boolean} [input.isSymlink] — симлинк перезаписывать не будем: это ссылка, а не файл
  * @param {boolean} [input.allow] — осознанный обход
  * @returns {{ allowed: boolean, reason?: string, hint?: string }}
  */
 export function classifyShrink(input) {
 	if (input.allow) return { allowed: true };
-	if (input.isSymlink) return { allowed: true };
 	if (!input.tracked) return { allowed: true };
 	if (input.oldBytes <= MIN_TRACKED_BYTES) return { allowed: true };
 

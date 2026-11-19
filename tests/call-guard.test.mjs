@@ -67,5 +67,19 @@ test("сегменты режутся по ; && || вне кавычек", () =>
 	assert.deepEqual(splitSegments("cd /a; true"), ["cd /a", "true"]);
 	assert.deepEqual(splitSegments("cd /a && a || b"), ["cd /a", "a", "b"]);
 	assert.deepEqual(splitSegments('echo "a;b"'), ['echo "a;b"']);
-	assert.deepEqual(splitSegments("git branch -a | wc -l"), ["git branch -a", "wc -l"]);
+	// Одиночный `|` — не граница сегмента: конвейер один вызов, и фильтр считается внутри него.
+	assert.deepEqual(splitSegments("git branch -a | wc -l"), ["git branch -a | wc -l"]);
+});
+
+// Поиск текста по репозиторию — не вызов git: строку `git branch -a` ищут в этом самом файле
+// (`rg -n "git branch -a" extensions/`), и блокировать такой поиск нельзя.
+test("упоминание в кавычках не блокируется", () => {
+	assert.equal(classifyCall('rg -n "git branch -a" /abs').allowed, true);
+	assert.equal(classifyCall('echo "git branch -a"').allowed, true);
+});
+
+// Обратная сторона: блокируется сегмент без фильтра, даже если фильтр есть у соседнего вызова.
+test("фильтр соседнего сегмента не спасает", () => {
+	assert.equal(classifyCall("git branch -a; ls /tmp | head").allowed, false);
+	assert.equal(classifyCall("cd /repo && git branch -a").allowed, false);
 });

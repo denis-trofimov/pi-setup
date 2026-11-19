@@ -52,7 +52,11 @@ rm "$repo/homoglyph.md"
 # Escapes are not letters: a Makefile recipe with `\n` before a Cyrillic word is not a homoglyph
 # (#15740 п.1). The false positive forced the db-q recipe to be split into two printf calls
 # (7f34f903d6), i.e. the code was bent to fit the checker.
-printf 'дерево: %%s\nветка: %%s\n' > "$repo/recipe.txt"
+#
+# Literal backslash-n, not a newline: `printf '…%%s\nветка'` converts the escape, and the file then
+# holds no `\n` at all — the first version of this test was green before and after any fix.
+printf '%s\n' 'дерево: %s\nветка: %s' > "$repo/recipe.txt"
+grep -q '\\nветка' "$repo/recipe.txt" || fail "фикстура не содержит литеральный \\n перед кириллицей"
 "$TOOL" --homoglyph-only "$repo/recipe.txt" >/dev/null 2>&1 || fail "\n перед кириллицей — не гомоглиф"
 # …and a real glued Latin letter stays red, otherwise the rule above would hide the error class.
 printf 'nветка\n' > "$repo/glued.md"
