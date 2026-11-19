@@ -173,6 +173,8 @@ test -d /root/.pi/agent/skills
 test -f /root/.pi/agent/settings.json
 test -f /root/.pi/agent/mcp.json
 test -f /root/.pi/agent/playwright-mcp.json
+test -f /root/.tmux.conf
+grep -q '^set -g mouse on$' /root/.tmux.conf
 test -x /root/.local/bin/pi
 test -L /root/.local/bin/pi-setup-sync
 

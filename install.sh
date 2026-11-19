@@ -10,7 +10,8 @@ set -euo pipefail
 #   ./install.sh                         # install sync helper + compact launcher only
 #   ./install.sh --copy-config           # also overwrite ~/.pi/agent/settings.json and mcp.json,
 #                                        # overwrite AGENTS.md/pi-pstack-adapter.json when
-#                                        # restoring, and merge config/vscode-keybindings.json
+#                                        # restoring, copy the home/ dotfiles (e.g. ~/.tmux.conf),
+#                                        # and merge config/vscode-keybindings.json
 #   ./install.sh --restore               # also restore extensions/themes/skills from this repo
 #   ./install.sh --restore --dry-run     # preview changes without writing files
 #   ./install.sh --restore --backup      # save current live files before replacing them
@@ -63,7 +64,8 @@ Usage:
   ./install.sh                         # install sync helper + compact launcher only
   ./install.sh --copy-config           # also overwrite ~/.pi/agent/settings.json and mcp.json,
                                        # overwrite AGENTS.md/pi-pstack-adapter.json when
-                                       # restoring, and merge config/vscode-keybindings.json
+                                       # restoring, copy the home/ dotfiles (~/.tmux.conf),
+                                       # and merge config/vscode-keybindings.json
   ./install.sh --restore               # also restore extensions/themes/skills into ~/.pi/agent
   ./install.sh --restore --dry-run     # preview changes without writing files
   ./install.sh --restore --backup      # save current live files before replacing them
@@ -291,6 +293,18 @@ make_backup() {
       touch "$BACKUP_DIR/.absent-$(basename "$name")"
     fi
   done
+  # Dotfiles from home/ mirror $HOME, so they sit outside $PI_HOME. --copy-config
+  # writes them, so the previous copy has to be revertible too.
+  local dotfile rel
+  while IFS= read -r -d '' dotfile; do
+    rel="${dotfile#"$ROOT/home/"}"
+    mkdir -p "$BACKUP_DIR/home/$(dirname "$rel")"
+    if [[ -f "$HOME/$rel" ]]; then
+      cp "$HOME/$rel" "$BACKUP_DIR/home/$rel"
+    else
+      touch "$BACKUP_DIR/home/.absent-${rel//\//_}"
+    fi
+  done < <(find "$ROOT/home" -type f -print0 2>/dev/null)
 
   cat >"$BACKUP_DIR/MANIFEST.txt" <<EOF
 pi-setup backup
@@ -330,6 +344,18 @@ revert_backup() {
       echo "Backup has no $name state; leaving $PI_HOME/$name unchanged."
     fi
   done
+  local dotfile rel
+  while IFS= read -r -d '' dotfile; do
+    rel="${dotfile#"$ROOT/home/"}"
+    if [[ -f "$backup/home/$rel" ]]; then
+      copy_path "$backup/home/$rel" "$HOME/$rel"
+    elif [[ -f "$backup/home/.absent-${rel//\//_}" ]]; then
+      echo "Removing $HOME/$rel because it was absent when the backup was created."
+      run rm -f "$HOME/$rel"
+    else
+      echo "Backup has no home/$rel state; leaving $HOME/$rel unchanged."
+    fi
+  done < <(find "$ROOT/home" -type f -print0 2>/dev/null)
   echo "Revert complete. Restart Pi or run /reload in an existing session."
 }
 
@@ -783,6 +809,33 @@ install_spellcheck_deny() {
 
 install_spellcheck_allow
 install_spellcheck_deny
+
+# Dotfiles that live outside ~/.pi/agent (tmux, and anything else that lands under
+# home/) are mirrored in a home/ tree that shadows $HOME. They are not Pi config, so a
+# plain install never touches them; --copy-config, the same gate that overwrites
+# ~/.pi/agent/settings.json, is what writes them. make_backup keeps the previous copy
+# revertible, because ~/.tmux.conf is usually hand-edited on each machine.
+install_home_dotfiles() {
+  [[ -d "$ROOT/home" ]] || return 0
+  local src rel dst
+  while IFS= read -r -d '' src; do
+    rel="${src#"$ROOT/home/"}"
+    dst="$HOME/$rel"
+    if [[ "$COPY_CONFIG" != "1" ]]; then
+      if [[ ! -f "$dst" ]]; then
+        echo "~/$rel is not installed; run ./install.sh --copy-config to install it."
+      elif cmp -s "$src" "$dst"; then
+        echo "~/$rel is up to date."
+      else
+        echo "~/$rel differs from the repo copy; leaving it (use --copy-config to overwrite)."
+      fi
+      continue
+    fi
+    copy_path "$src" "$dst"
+  done < <(find "$ROOT/home" -type f -print0)
+}
+
+install_home_dotfiles
 
 if [[ -n "$BACKUP_DIR" ]]; then
   echo "To revert this install: $ROOT/install.sh --revert '$BACKUP_DIR'"

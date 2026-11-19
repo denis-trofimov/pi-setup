@@ -594,7 +594,7 @@ cd "$ROOT"
 
 if [[ "$DRY_RUN" == "1" ]]; then
   echo "Dry run: would sync from $PI_HOME into $ROOT"
-  echo "Files that may change: extensions/, themes/, skills/, config/settings.example.json, config/mcp.example.json, config/micme.example.json, config/models.example.json, config/AGENTS.md, config/delegation-models.md, config/session-logs.md, config/pi-pstack-adapter.example.json, config/ru-spellcheck/allow.txt"
+  echo "Files that may change: extensions/, themes/, skills/, config/settings.example.json, config/mcp.example.json, config/micme.example.json, config/models.example.json, config/AGENTS.md, config/delegation-models.md, config/session-logs.md, config/pi-pstack-adapter.example.json, config/ru-spellcheck/allow.txt, home/"
   exit 0
 fi
 
@@ -633,6 +633,19 @@ if [[ -f "$spellcheck_allow" ]]; then
   cp "$spellcheck_allow" "$ROOT/config/ru-spellcheck/allow.txt"
 fi
 
+# Non-Pi dotfiles: the live copy under $HOME is the source of truth, mirrored into home/ so a
+# restore can put it back. Only files already tracked there are captured, so the repo decides
+# which dotfiles it owns — a stray ~/.bashrc never gets swept in.
+if [[ -d "$ROOT/home" ]]; then
+  while IFS= read -r -d '' dotfile; do
+    rel="${dotfile#"$ROOT/home/"}"
+    if [[ -f "$HOME/$rel" ]]; then
+      mkdir -p "$(dirname "$ROOT/home/$rel")"
+      cp "$HOME/$rel" "$ROOT/home/$rel"
+    fi
+  done < <(find "$ROOT/home" -type f -print0)
+fi
+
 validate_json "$ROOT/package.json" "$ROOT/config/settings.example.json"
 if [[ -f "$ROOT/config/models.example.json" ]]; then
   validate_json "$ROOT/config/models.example.json"
@@ -651,7 +664,7 @@ validate_json "$ROOT"/themes/*.json
 validate_themes
 validate_skills
 
-git add bin extensions themes skills config docs tests package.json README.md install.sh uninstall.sh sync.sh setup_sync.sh .gitignore
+git add bin extensions themes skills config docs home tests package.json README.md install.sh uninstall.sh sync.sh setup_sync.sh .gitignore
 
 if git diff --cached --quiet; then
   echo "No Pi setup changes to sync."

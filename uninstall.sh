@@ -238,6 +238,14 @@ fi
 remove_if_matches_file "$PI_HOME/micme.json" "$ROOT/config/micme.example.json"
 remove_if_matches_file "$PI_HOME/playwright-mcp.json" "$ROOT/config/playwright-mcp.json"
 remove_if_matches_file "$PI_HOME/models.json" "$ROOT/config/models.example.json"
+# Dotfiles from home/ mirror $HOME; remove one only when it is still byte-identical to
+# the repo copy, so a hand-edited ~/.tmux.conf survives an uninstall.
+if [[ -d "$ROOT/home" ]]; then
+  while IFS= read -r -d '' dotfile; do
+    rel="${dotfile#"$ROOT/home/"}"
+    remove_if_matches_file "$HOME/$rel" "$dotfile"
+  done < <(find "$ROOT/home" -type f -print0)
+fi
 remove_self_package_reference
 
 echo "Done. Pi's own installation is untouched. If your shell cached $BIN_DIR/pi, run: hash -r"
