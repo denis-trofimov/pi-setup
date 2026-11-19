@@ -634,16 +634,17 @@ if [[ -f "$spellcheck_allow" ]]; then
 fi
 
 # Non-Pi dotfiles: the live copy under $HOME is the source of truth, mirrored into home/ so a
-# restore can put it back. Only files already tracked there are captured, so the repo decides
-# which dotfiles it owns — a stray ~/.bashrc never gets swept in.
+# restore can put it back. Selection follows git tracking, not the working tree, because this
+# is the step that commits and pushes: an untracked file sitting in home/ (someone's hand-dropped
+# ~/.netrc) must never ride along into a commit. `cmp -s` also covers a ~/.tmux.conf symlinked
+# into this repo, which plain `cp` refuses as "same file".
 if [[ -d "$ROOT/home" ]]; then
-  while IFS= read -r -d '' dotfile; do
-    rel="${dotfile#"$ROOT/home/"}"
-    if [[ -f "$HOME/$rel" ]]; then
-      mkdir -p "$(dirname "$ROOT/home/$rel")"
+  while IFS= read -r -d '' tracked; do
+    rel="${tracked#home/}"
+    if [[ -f "$HOME/$rel" ]] && ! cmp -s "$HOME/$rel" "$ROOT/home/$rel"; then
       cp "$HOME/$rel" "$ROOT/home/$rel"
     fi
-  done < <(find "$ROOT/home" -type f -print0)
+  done < <(git -C "$ROOT" ls-files -z -- home)
 fi
 
 validate_json "$ROOT/package.json" "$ROOT/config/settings.example.json"
@@ -664,7 +665,16 @@ validate_json "$ROOT"/themes/*.json
 validate_themes
 validate_skills
 
-git add bin extensions themes skills config docs home tests package.json README.md install.sh uninstall.sh sync.sh setup_sync.sh .gitignore
+git add bin extensions themes skills config docs tests package.json README.md install.sh uninstall.sh sync.sh setup_sync.sh .gitignore
+
+# home/ is staged file by file from the index instead of with `git add home`: the directory
+# can hold an untracked dotfile (a hand-dropped ~/.netrc), and staging the directory would
+# commit it. Only a dotfile the repo already tracks is ever restaged.
+if [[ -d "$ROOT/home" ]]; then
+  while IFS= read -r -d '' tracked; do
+    git add -- "$tracked"
+  done < <(git -C "$ROOT" ls-files -z -- home)
+fi
 
 if git diff --cached --quiet; then
   echo "No Pi setup changes to sync."

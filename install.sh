@@ -258,6 +258,16 @@ PY
   echo "note: could not merge config/models.example.json into $live; add providers.openrouter.modelOverrides manually"
 }
 
+# Relative paths of the dotfiles the repo owns, one per line. Command substitution (not
+# `find … < <( )`) so a failed walk is visible: `set -e` covers `$( )`, not process
+# substitution. Install/backup/revert act on filesystem presence on purpose — a restore
+# runs on a machine where home/ is the only thing that exists yet. sync.sh is the one step
+# that has to follow git tracking instead, because it is the step that commits and pushes.
+home_dotfile_rels() {
+  [[ -d "$ROOT/home" ]] || return 0
+  (cd "$ROOT/home" && find . -type f) | sed 's|^\./||' | LC_ALL=C sort
+}
+
 make_backup() {
   if [[ "$BACKUP" != "1" || "$DRY_RUN" == "1" ]]; then
     [[ "$BACKUP" == "1" && "$DRY_RUN" == "1" ]] && echo "would create backup under $PI_HOME/backups/"
@@ -293,18 +303,26 @@ make_backup() {
       touch "$BACKUP_DIR/.absent-$(basename "$name")"
     fi
   done
-  # Dotfiles from home/ mirror $HOME, so they sit outside $PI_HOME. --copy-config
-  # writes them, so the previous copy has to be revertible too.
-  local dotfile rel
-  while IFS= read -r -d '' dotfile; do
-    rel="${dotfile#"$ROOT/home/"}"
-    mkdir -p "$BACKUP_DIR/home/$(dirname "$rel")"
-    if [[ -f "$HOME/$rel" ]]; then
-      cp "$HOME/$rel" "$BACKUP_DIR/home/$rel"
-    else
-      touch "$BACKUP_DIR/home/.absent-${rel//\//_}"
-    fi
-  done < <(find "$ROOT/home" -type f -print0 2>/dev/null)
+  # Dotfiles from home/ mirror $HOME, so they sit outside $PI_HOME. Only --copy-config
+  # writes them, so only that combination has pre-install state worth keeping: recording
+  # them on a plain --backup would let a later --revert delete a file this run never wrote.
+  # The manifest is what revert reads, so a dotfile dropped from the repo afterwards still
+  # has its pre-install copy.
+  if [[ "$COPY_CONFIG" == "1" ]]; then
+    local rels rel
+    rels="$(home_dotfile_rels)"
+    : >"$BACKUP_DIR/home-manifest.txt"
+    while IFS= read -r rel; do
+      [[ -n "$rel" ]] || continue
+      if [[ -f "$HOME/$rel" ]]; then
+        mkdir -p "$BACKUP_DIR/home/$(dirname "$rel")"
+        cp "$HOME/$rel" "$BACKUP_DIR/home/$rel"
+        echo "present $rel" >>"$BACKUP_DIR/home-manifest.txt"
+      else
+        echo "absent $rel" >>"$BACKUP_DIR/home-manifest.txt"
+      fi
+    done <<<"$rels"
+  fi
 
   cat >"$BACKUP_DIR/MANIFEST.txt" <<EOF
 pi-setup backup
@@ -344,18 +362,20 @@ revert_backup() {
       echo "Backup has no $name state; leaving $PI_HOME/$name unchanged."
     fi
   done
-  local dotfile rel
-  while IFS= read -r -d '' dotfile; do
-    rel="${dotfile#"$ROOT/home/"}"
-    if [[ -f "$backup/home/$rel" ]]; then
-      copy_path "$backup/home/$rel" "$HOME/$rel"
-    elif [[ -f "$backup/home/.absent-${rel//\//_}" ]]; then
-      echo "Removing $HOME/$rel because it was absent when the backup was created."
-      run rm -f "$HOME/$rel"
-    else
-      echo "Backup has no home/$rel state; leaving $HOME/$rel unchanged."
-    fi
-  done < <(find "$ROOT/home" -type f -print0 2>/dev/null)
+  if [[ -f "$backup/home-manifest.txt" ]]; then
+    local state rel
+    while IFS=' ' read -r state rel; do
+      [[ -n "$state" && -n "$rel" ]] || continue
+      if [[ "$state" == "present" && -f "$backup/home/$rel" ]]; then
+        copy_path "$backup/home/$rel" "$HOME/$rel"
+      elif [[ "$state" == "absent" ]]; then
+        echo "Removing $HOME/$rel because it was absent when the backup was created."
+        run rm -f "$HOME/$rel"
+      else
+        echo "Backup has no home/$rel state; leaving $HOME/$rel unchanged."
+      fi
+    done <"$backup/home-manifest.txt"
+  fi
   echo "Revert complete. Restart Pi or run /reload in an existing session."
 }
 
@@ -816,23 +836,31 @@ install_spellcheck_deny
 # ~/.pi/agent/settings.json, is what writes them. make_backup keeps the previous copy
 # revertible, because ~/.tmux.conf is usually hand-edited on each machine.
 install_home_dotfiles() {
-  [[ -d "$ROOT/home" ]] || return 0
-  local src rel dst
-  while IFS= read -r -d '' src; do
-    rel="${src#"$ROOT/home/"}"
+  local rels rel src dst stamp
+  rels="$(home_dotfile_rels)"
+  while IFS= read -r rel; do
+    [[ -n "$rel" ]] || continue
+    src="$ROOT/home/$rel"
     dst="$HOME/$rel"
     if [[ "$COPY_CONFIG" != "1" ]]; then
       if [[ ! -f "$dst" ]]; then
-        echo "~/$rel is not installed; run ./install.sh --copy-config to install it."
+        echo "$dst is not installed; run ./install.sh --copy-config to install it."
       elif cmp -s "$src" "$dst"; then
-        echo "~/$rel is up to date."
+        echo "$dst is up to date."
       else
-        echo "~/$rel differs from the repo copy; leaving it (use --copy-config to overwrite)."
+        echo "$dst differs from the repo copy; leaving it (use --copy-config to overwrite)."
       fi
       continue
     fi
+    if [[ -f "$dst" ]] && ! cmp -s "$src" "$dst"; then
+      # Same precedent as the VS Code keybindings merge: the live file is the user's, so
+      # an overwrite keeps the previous copy next to it even without --backup.
+      stamp="$(date +%Y%m%dT%H%M%S)"
+      run cp "$dst" "$dst.bak-$stamp"
+      echo "Backed up the previous $dst to $dst.bak-$stamp"
+    fi
     copy_path "$src" "$dst"
-  done < <(find "$ROOT/home" -type f -print0)
+  done <<<"$rels"
 }
 
 install_home_dotfiles

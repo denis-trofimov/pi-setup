@@ -159,9 +159,9 @@ Useful installer options:
 
 `--restore` copies repo resources into `~/.pi/agent/extensions`, `~/.pi/agent/themes`, and `~/.pi/agent/skills`.
 
-`--copy-config` copies `config/settings.example.json`, `config/mcp.example.json`, and `config/micme.example.json` into `~/.pi/agent/`, and merges `config/vscode-keybindings.json` into the VS Code user `keybindings.json` (existing entries and comments are preserved; a `.bak-<timestamp>` copy is written first).
+`--copy-config` copies `config/settings.example.json`, `config/mcp.example.json`, and `config/micme.example.json` into `~/.pi/agent/`, copies the `home/` dotfiles (`home/.tmux.conf` → `~/.tmux.conf`), and merges `config/vscode-keybindings.json` into the VS Code user `keybindings.json` (existing entries and comments are preserved; a `.bak-<timestamp>` copy is written first). A dotfile that differs from the repo copy gets the same `.bak-<timestamp>` treatment before it is overwritten, even without `--backup`.
 
-`--backup` saves current `extensions`, `themes`, `skills`, `settings.json`, and `mcp.json` under `~/.pi/agent/backups/pi-setup-*` before replacing anything. Revert with the exact command printed at the end of install.
+`--backup` saves current `extensions`, `themes`, `skills`, `settings.json`, and `mcp.json` under `~/.pi/agent/backups/pi-setup-*` before replacing anything; with `--copy-config` it also records the pre-install state of every `home/` dotfile in `home-manifest.txt`, which is what `--revert` reads. Revert with the exact command printed at the end of install.
 
 The example settings pin the startup model with `defaultProvider` + `defaultModel` (both are required — `defaultModel` is the bare model id, not `provider/model`). If that provider is not configured on your machine, Pi falls back to the first authenticated model. `enabledModels` is intentionally **not** included: those patterns are machine-specific and can produce noisy "No models match pattern" warnings for anyone restoring this repo before configuring their own providers.
 
@@ -191,6 +191,8 @@ Warnings:
 
 - `--restore` replaces the current contents of those live resource directories.
 - `--copy-config` overwrites `~/.pi/agent/settings.json` and `~/.pi/agent/mcp.json`, and merges (does not overwrite) `~/.pi/agent/models.json`.
+- `--copy-config` is also the only step that writes `~/.tmux.conf`; a plain `./install.sh` reports the difference and leaves the
+  live file alone. `--revert` restores it, or deletes it again when the backup recorded that it did not exist.
 - `--restore` also copies `~/.pi/agent/AGENTS.md` and `~/.pi/agent/pi-pstack-adapter.json` when they are absent; add `--copy-config` to overwrite them. Without `--restore` neither file is touched.
 - `--copy-config` only *adds* missing VS Code keybindings; it never rewrites or removes existing ones. Set `VSCODE_KEYBINDINGS=/path/to/keybindings.json` to target a non-default location (e.g. VS Code Insiders or a profile).
 - Use `--dry-run` first if you only want to preview the restore.
@@ -724,7 +726,9 @@ the key: a working `ctrl+alt+d` toggles the `Δ N files (+x/-y)` line.
 
 ## tmux configuration
 
-`home/` is a `$HOME` mirror for dotfiles that are not Pi config; today it holds one file.
+`home/` is a `$HOME` mirror for dotfiles that are not Pi config; today it holds one file. That is why the tmux config is
+not in `config/`: that directory holds Pi's own templates (`vscode-keybindings.json` is the only exception, because the
+merge step needs the snippet next to the settings it belongs to).
 
 ```bash
 ./install.sh --copy-config    # copies home/.tmux.conf -> ~/.tmux.conf
@@ -738,6 +742,12 @@ exist before). `./sync.sh` copies the live `~/.tmux.conf` back into `home/`; fil
 captured only if the repo already tracks them, so a stray `~/.bashrc` is never swept in.
 `./uninstall.sh` removes `~/.tmux.conf` only when it is still byte-identical to the repo
 copy.
+
+`tests/home-dotfiles.sh` covers that contract against throwaway `$HOME` directories — no
+Docker, no network: plain install leaves the file alone, `--copy-config` keeps a `.bak`
+before overwriting, `--backup` + `--revert` restore it (or delete what install created),
+`--backup` without `--copy-config` records nothing, `uninstall.sh` keeps a modified copy,
+and `sync.sh` commits a tracked dotfile while ignoring an untracked one.
 
 What the config actually does (tmux 3.4, validated on a throwaway server before it landed
 in the live one):
