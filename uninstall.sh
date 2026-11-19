@@ -241,10 +241,13 @@ remove_if_matches_file "$PI_HOME/models.json" "$ROOT/config/models.example.json"
 # Dotfiles from home/ mirror $HOME; remove one only when it is still byte-identical to
 # the repo copy, so a hand-edited ~/.tmux.conf survives an uninstall.
 if [[ -d "$ROOT/home" ]]; then
-  while IFS= read -r -d '' dotfile; do
-    rel="${dotfile#"$ROOT/home/"}"
-    remove_if_matches_file "$HOME/$rel" "$dotfile"
-  done < <(find "$ROOT/home" -type f -print0)
+  # Command substitution, not `find … < <( )`: `set -e` covers the former, so a failing
+  # walk is visible instead of silently removing nothing.
+  home_rels="$(cd "$ROOT/home" && find . -type f | sed 's|^\./||' | LC_ALL=C sort)"
+  while IFS= read -r rel; do
+    [[ -n "$rel" ]] || continue
+    remove_if_matches_file "$HOME/$rel" "$ROOT/home/$rel"
+  done <<<"$home_rels"
 fi
 remove_self_package_reference
 

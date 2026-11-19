@@ -852,12 +852,22 @@ install_home_dotfiles() {
       fi
       continue
     fi
-    if [[ -f "$dst" ]] && ! cmp -s "$src" "$dst"; then
+    if [[ -f "$dst" ]]; then
+      if cmp -s "$src" "$dst"; then
+        # Already the repo copy — which includes a ~/.tmux.conf symlinked into the repo,
+        # where `cp` onto itself aborts with "are the same file".
+        echo "$dst is up to date."
+        continue
+      fi
       # Same precedent as the VS Code keybindings merge: the live file is the user's, so
       # an overwrite keeps the previous copy next to it even without --backup.
       stamp="$(date +%Y%m%dT%H%M%S)"
       run cp "$dst" "$dst.bak-$stamp"
-      echo "Backed up the previous $dst to $dst.bak-$stamp"
+      if [[ "$DRY_RUN" == "1" ]]; then
+        echo "would back up the previous $dst to $dst.bak-<timestamp>"
+      else
+        echo "Backed up the previous $dst to $dst.bak-$stamp"
+      fi
     fi
     copy_path "$src" "$dst"
   done <<<"$rels"

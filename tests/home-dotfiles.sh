@@ -142,7 +142,33 @@ else
   pass "uninstall removes an unmodified ~/.tmux.conf"
 fi
 
-# 8. sync.sh: an untracked dotfile sitting in home/ must not be captured or committed, and
+# 8. --copy-config --dry-run must not claim a backup it did not make.
+home="$(new_home)"
+printf 'hand written\n' >"$home/.tmux.conf"
+install_into "$home" --copy-config --dry-run
+if [[ ! -e "$home/.tmux.conf.bak-$(date +%Y%m%dT%H%M%S)" ]] && grep -q 'would back up the previous' "$home/.install.log"; then
+  pass "dry run reports a future backup without writing one"
+else
+  fail "dry run wrote a backup or claimed a completed one"
+fi
+if cmp -s "$home/.tmux.conf" <(printf 'hand written\n'); then
+  pass "dry run leaves the live dotfile untouched"
+else
+  fail "dry run rewrote the live dotfile"
+fi
+
+# 9. A ~/.tmux.conf symlinked into the repo is already the repo copy: install must not try
+#    to `cp` it onto itself ("are the same file" aborts the run).
+home="$(new_home)"
+ln -s "$ROOT/home/.tmux.conf" "$home/.tmux.conf"
+install_into "$home" --copy-config
+if [[ -L "$home/.tmux.conf" ]]; then
+  pass "--copy-config survives a ~/.tmux.conf symlinked into the repo"
+else
+  fail "--copy-config replaced a symlinked ~/.tmux.conf"
+fi
+
+# 10. sync.sh: an untracked dotfile sitting in home/ must not be captured or committed, and
 #    a tracked one must be. This is the case that regression-proofs the shell-history-style
 #    mistake: `git add home` stages the directory, not the tracked files, so a hand-dropped
 #    ~/.netrc would ride into the commit and get pushed.

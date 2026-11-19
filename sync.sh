@@ -645,6 +645,13 @@ if [[ -d "$ROOT/home" ]]; then
       cp "$HOME/$rel" "$ROOT/home/$rel"
     fi
   done < <(git -C "$ROOT" ls-files -z -- home)
+  # A dotfile dropped into home/ by hand is not tracked yet, so it is neither captured nor
+  # staged. Say so: silence here reads as "captured" the next time someone looks.
+  untracked_home="$(git -C "$ROOT" status --porcelain --untracked-files=all -- home)"
+  if [[ -n "$untracked_home" ]]; then
+    echo "note: untracked files in home/ were left alone (track the dotfile first):"
+    printf '%s\n' "$untracked_home" | sed 's/^/  /'
+  fi
 fi
 
 validate_json "$ROOT/package.json" "$ROOT/config/settings.example.json"
