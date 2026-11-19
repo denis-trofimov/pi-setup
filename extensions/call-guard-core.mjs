@@ -33,8 +33,38 @@ const CD_SEGMENT = /^cd\s+[^;&|]+?(?:\s+[012]?>>?\s*\S+|\s+2>&1)*\s*$/;
  * текста по репозиторию, а не вызов git, и блокировать его нельзя (такая строка живёт в самом
  * call-guard-core.mjs).
  */
-const GIT_BRANCH_LISTING = /^git\s+(?:-C\s+\S+\s+)?branch\b[^|;]*\s(?:-a|--all|-r|--remotes|--list)\b/;
-const GIT_REMOTE_SHOW = /^git\s+(?:-C\s+\S+\s+)?remote\s+show\b/;
+const GIT_BRANCH_LISTING = /^git\s+(?:-C\s+(?:"[^"]*"|'[^']*'|\S+)\s+)?branch\b[^|;]*\s(?:-a|--all|-r|--remotes|--list)\b/;
+const GIT_REMOTE_SHOW = /^git\s+(?:-C\s+(?:"[^"]*"|'[^']*'|\S+)\s+)?remote\s+show\b/;
+
+/**
+ * Обёртки перед командой: `sudo`, `command`, `env -u X`, `GIT_PAGER=cat`, `time`, их флаги и
+ * присваивания переменных. Снимаются, чтобы правило видело сам вызов: `sudo git branch -a`
+ * блокировался и до сужения правил к сегменту. Якорь `^` нужен ровно для того, что НЕ является
+ * вызовом git (`rg -n "git branch -a"`).
+ */
+const WRAPPER = /^(sudo|command|exec|time|env)\b\s*/;
+const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=\S*\s+/;
+const FLAG = /^-{1,2}[^\s]+\s+(?:\S+\s+)?/;
+
+function unwrapped(segment) {
+	let text = segment.trim();
+
+	for (;;) {
+		let next = null;
+		const wrapper = text.match(WRAPPER);
+		if (wrapper) {
+			next = text.slice(wrapper[0].length).trim();
+		} else if (ASSIGNMENT.test(text)) {
+			next = text.replace(ASSIGNMENT, "").trim();
+		} else if (FLAG.test(text)) {
+			// `env -u X git …`: флаг с аргументом. Применяется только к остатку, начинающемуся с `-`.
+			next = text.replace(FLAG, "").trim();
+		}
+
+		if (next === null || next === text || next === "") return next ?? text;
+		text = next;
+	}
+}
 
 /**
  * Разбить команду на сегменты по `;`, `&&`, `||` вне кавычек.
@@ -63,10 +93,11 @@ export function splitSegments(command) {
 			continue;
 		}
 		const pair = command[i + 1];
-		if (char === ";" || (char === "&" && pair === "&") || (char === "|" && pair === "|")) {
+		if (char === ";" || char === "&" || (char === "|" && pair === "|")) {
 			segments.push(current);
 			current = "";
-			if (char !== ";") i += 1;
+			// `&&` и `||` — один разделитель из двух символов; одиночный `&` — фон, тоже конец команды.
+			if (pair === "&" || (char === "|" && pair === "|")) i += 1;
 			continue;
 		}
 		current += char;
@@ -103,8 +134,9 @@ export function classifyCall(command, options = {}) {
 		};
 	}
 
-	for (const segment of segments) {
-		if (/\|/.test(segment)) continue;
+	for (const raw of segments) {
+		if (/\|/.test(raw)) continue;
+		const segment = unwrapped(raw);
 
 		if (GIT_BRANCH_LISTING.test(segment)) {
 			return {

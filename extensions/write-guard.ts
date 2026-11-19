@@ -54,9 +54,10 @@ export default function writeGuard(pi: ExtensionAPI) {
 		}
 		if (!stats.isFile()) return undefined;
 
-		let target = absolute;
+		// Цель симлинка, а не сам путь: перезапись по ссылке меняет файл в другом месте.
+		let resolved = absolute;
 		try {
-			target = realpathSync(absolute);
+			resolved = realpathSync(absolute);
 		} catch {
 			// битый симлинк: писать по нему нельзя, но и сторожить нечего — решение за инструментом
 			return undefined;
@@ -71,7 +72,7 @@ export default function writeGuard(pi: ExtensionAPI) {
 			classifyShrink({
 				oldBytes,
 				newBytes,
-				tracked: isTracked(target, ctx.cwd),
+				tracked: isTracked(resolved, ctx.cwd),
 			})
 		);
 	});

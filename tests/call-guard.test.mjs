@@ -83,3 +83,24 @@ test("фильтр соседнего сегмента не спасает", () 
 	assert.equal(classifyCall("git branch -a; ls /tmp | head").allowed, false);
 	assert.equal(classifyCall("cd /repo && git branch -a").allowed, false);
 });
+
+// Обёртки перед вызовом не должны прятать правило: до сужения к сегменту они блокировались,
+// и терять это покрытие незачем (находка ревью раунда 2).
+test("обёртки и присваивания перед git не прячут вызов", () => {
+	for (const command of [
+		"sudo git branch -a",
+		"env -u X git branch -a",
+		"GIT_PAGER=cat git branch -a",
+		"time git remote show origin",
+		'git -C "/a b" branch -a',
+		"cd /a & git branch -a",
+	]) {
+		assert.equal(classifyCall(command).allowed, false, command);
+	}
+});
+
+test("одиночный & — конец команды, конвейер — нет", () => {
+	assert.deepEqual(splitSegments("cd /a & ls"), ["cd /a", "ls"]);
+	assert.deepEqual(splitSegments("a && b"), ["a", "b"]);
+	assert.deepEqual(splitSegments("a | b"), ["a | b"]);
+});

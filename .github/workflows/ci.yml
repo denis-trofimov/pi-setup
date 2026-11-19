@@ -57,8 +57,17 @@ jobs:
       - name: ru-spellcheck compiles
         run: python3 -m py_compile bin/ru-spellcheck
 
-      - name: Guard rules (node --test)
-        run: node --test tests/*.test.mjs
+      # --experimental-strip-types нужен, чтобы тест грузил сами `.ts` расширения: `node --check`
+      # на них возвращает 0 даже при дубле объявления, и мёртвый сторож проходил бы зелёным.
+      - name: Guard rules and extension loading (node --test)
+        run: node --experimental-strip-types --test tests/*.test.mjs
+
+      # Личность git для тестов, которые коммитят: на ubuntu-24.04 в /etc/gitconfig лежит только
+      # `[safe] directory = *`, `sync.sh` в клоне падает на «unable to auto-detect email address».
+      - name: Git identity for commit tests
+        run: |
+          git config --global user.name "pi-setup CI"
+          git config --global user.email "pi-setup@example.invalid"
 
       - name: Script tests (ru-spellcheck, prek guard, uat login)
         run: |
