@@ -73,7 +73,7 @@ bash /tmp/redmine-install.sh
 | Задача | Команда | Проверенные флаги |
 | --- | --- | --- |
 | Добавить заметку | `issues comment <id>` | `-m`, `--message` (только это) |
-| Изменить поля/добавить note | `issues update <id>` | `--note`, `--private-notes`, `--status`, `--assignee`, `--description`, `--custom-field`, `--attach`, `--due-date`, `--estimated-hours`, `--done-ratio` |
+| Изменить поля/добавить note | `issues update <id>` | `--note`, `--private-notes`, `--status`, `--priority`, `--assignee`, `--subject`, `--description`, `--tracker`, `--parent`, `--category`, `--version`, `--start-date`, `--due-date`, `--estimated-hours`, `--done-ratio`, `--custom-field`, `--attach`, `--private` |
 | Закрыть | `issues close <id>` | `--note` |
 | Читать | `issues get <id>` | `--journals`, `--attachments`, `--relations`, `--children`, `--download-attachments <dir>`, `--include journals,children,relations,attachments` |
 | Дети задачи | `issues list --parent <id> --status "*"` | `--children` у `issues get` отдаёт **только id** — без тем и статусов, и вторым запросом их всё равно берут списком. Один вызов вместо двух (#15735 п.5) |
@@ -267,9 +267,11 @@ redmine-file issues update 15705 --note-file /tmp/note.txt [--private-notes]
 приходит с `notes: 0` и без блока вложений даже при опубликованной ноте, и следующий шаг — повторный
 `--note`, то есть дубль в трекере (#15611 п.5).
 
-**Ключа может не быть вовсе.** На задаче без вложений `--attachments` не даёт `attachments: []` —
-ключа в ответе нет (проверено на #15675). `jq` это маскирует: `length` от `null` равен нулю, — а
-`python3` падает на `KeyError`, так и случилось в сессии. Читать только через `// []` (#15675 п.5):
+**Ключа может не быть вовсе — обоих полей.** На задаче без записей `--journals` не даёт
+`journals: []`, на задаче без вложений `--attachments` не даёт `attachments: []`: ключа в ответе нет
+вовсе (проверено на #15733, #15729 и #15675). Это штатный случай, а не ошибка: `jq` его маскирует
+(`length` от `null` равен нулю), `python3` падает на `KeyError`. Читать оба поля только через `// []`
+(#15675 п.5, #15738 п.1):
 
 ```bash
 redmine issues get <id> --journals --attachments -o json \

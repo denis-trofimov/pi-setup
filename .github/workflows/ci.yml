@@ -1,0 +1,76 @@
+# Гейтрейл pi-setup (#15742 п.2).
+#
+# Зачем: тесты в `tests/` не запускал никто — `tests/docker-e2e.sh` и `tests/ru-spellcheck-repo-dict.sh`
+# лежали файлами. Ветку PR создавали от текущей ветки другой задачи (fix/15675-rg-wrapper), и в PR #6
+# уехал бы чужой коммит; это ловилось чтением `git log --oneline -3` перед публикацией.
+#
+# `tests/docker-e2e.sh` остаётся вне CI намеренно: он гоняет полный install в контейнере, минуты и Docker.
+# Здесь — быстрые проверки: синтаксис helper-ов, правила сторожей (node --test), скриптовые тесты
+# ru-spellcheck и база PR-ветки.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # Словарь ru_RU — зависимость полного прогона ru-spellcheck; без него тесты уходят в SKIP (код 77).
+      - name: Install hunspell ru_RU
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq hunspell hunspell-ru
+
+      - name: Bash syntax — bin/ and scripts
+        run: |
+          status=0
+          for file in bin/* install.sh uninstall.sh sync.sh setup_sync.sh tests/*.sh; do
+            bash -n "$file" || status=1
+          done
+          exit "$status"
+
+      - name: ru-spellcheck compiles
+        run: python3 -m py_compile bin/ru-spellcheck
+
+      - name: Guard rules (node --test)
+        run: node --test tests/*.test.mjs
+
+      - name: Script tests (ru-spellcheck, uat login)
+        run: |
+          status=0
+          for test in tests/*.sh; do
+            # docker-e2e запускает контейнер и полный install: намеренно вне CI.
+            [ "$test" = "tests/docker-e2e.sh" ] && continue
+            echo "== $test"
+            bash "$test" || status=1
+          done
+          exit "$status"
+
+      # База ветки: чужая ветка в основе PR приносит в него чужие коммиты (#15742 п.2).
+      # Проверяется только на pull_request: на push в main сравнивать не с чем.
+      - name: PR branch is based on origin/main
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch -q origin main
+          if ! git merge-base --is-ancestor origin/main HEAD; then
+            echo "Ветка не содержит origin/main в истории: пересоздайте её от origin/main." >&2
+            echo "Проверка: git merge-base --is-ancestor origin/main HEAD" >&2
+            exit 1
+          fi
+          echo "Коммитов сверх origin/main: $(git rev-list --count origin/main..HEAD)"
