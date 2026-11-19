@@ -46,8 +46,9 @@ One hard gate, in user config; do not weaken it without the user asking.
   seat. `oracle` and `evidence-auditor` also allow `glm-5.3` for a review that has to be argued at
   full strength.
 - **`medium` does not exist on most allowed models, and Pi clamps it UP, never down.**
-  `deepseek-v4.1-flash-1017` and `glm-5.3-flash` expose `off/low/high/max` (`glm-5.3`:
-  `low/high/max`); `z-ai/glm-5.2` exposes only `off/high/xhigh`, so even `low` becomes `high`.
+  `deepseek-v4.1-flash-1017` and `deepseek-v4-flash-vision-exp` expose `off/low/high/max`;
+  `glm-5.3` and `glm-5.3-flash` expose only `low/high/max` (no `off` — there the floor is 2048
+  tokens, not zero); `z-ai/glm-5.2` exposes only `off/high/xhigh`, so even `low` becomes `high`.
   `clampThinkingLevel` (pi-ai `dist/models.js`) scans upward from the requested level, so a `medium`
   override on those ids silently buys the 16384-token `high` budget instead of 8192, and nothing
   surfaces it. Levels per seat must be levels the model actually has: `medium` is real only on
@@ -55,10 +56,13 @@ One hard gate, in user config; do not weaken it without the user asking.
   running the configured pairs through `clampThinkingLevel`, not by reading the number you wrote.
 - `~/.pi/agent/pi-pstack-adapter.json` pins every pstack role and panel to a capped model (see the
   `Model roles` table of `pstack_adapter status`). `glm-5.3` is assigned only to `judgment`,
-  `strongest-judgment`, and one seat of `arena-cross-judge-pool`; every runner, reviewer, and
-  `hillclimb` role runs `glm-5.3-flash` at thinking `low`. The file carries no `modelFilter`: that
-  filter also blocked every delegation that named no model, which broke `code-review` and any skill
-  that lets a child inherit, so it was removed on purpose. `modelScope` is the gate.
+  `strongest-judgment`, and one seat of `arena-cross-judge-pool`; the six runner roles (`feature`,
+  `refactoring`, `bug-fix`, `perf-issue`, `hillclimb`, `general`) run `glm-5.3-flash` at thinking
+  `low`, while the panel runner seats (`arena-runners`, `architect-runners`,
+  `interrogate-reviewers`) keep `high` because a panel is a comparison, not a pass. The file carries
+  no `modelFilter`: that filter also blocked every delegation that named no model, which broke
+  `code-review` and any skill that lets a child inherit, so it was removed on purpose. `modelScope`
+  is the gate.
 - The table in `~/.pi/agent/docs/delegation-models.md` is a dated observation, not a standing
   fact. Re-verify it with `pi-models-check` (one `max_tokens: 1` request per id, exit 1 on 404)
   before trusting it after a provider or guardrail change. A 404 there is the cap, not local config.
