@@ -149,7 +149,7 @@
       "consolidator": {
         "provider": "openrouter",
         "id": "deepseek/deepseek-v4.1-flash-1017",
-        "thinking": "medium"
+        "thinking": "off"
       }
     }
   }
