@@ -57,22 +57,22 @@ Each smell reads *what it is* → *how to fix*; match it against the diff:
 
 ### 4. Spawn both sub-agents in parallel
 
-Issue both sub-agent calls together, the diff already materialised, and aggregate the reports they return.
+Issue both sub-agent calls together, in the foreground, and aggregate the reports they return.
 
 **A reviewer reads; it does not run.** The `reviewer` agent carries `read, grep, find, ls, watchdog_diff, contact_supervisor` — no shell, no git, no test runner. Two consequences:
 
-- **Materialise the diff before dispatching.** `git diff <fixed-point>...HEAD > /tmp/<name>.diff` and paste both the path and the hunk list into the prompt. A reviewer told to run `git show` answers from whatever files it can open and still reports "confirmed", so a verdict can be weaker than its wording implies. If the review must speak about a specific commit, hand it `git show <sha>` output, not the SHA.
-- **Pre-run the checks yourself and paste the output.** Asking a reviewer to run a test costs a call, comes back as "report any test command a supervisor must run", and leaves the code-review skill's own evidence step undone. Run `bash -n`, the test suite, or the repro command first; the reviewer judges the transcript.
+- **Materialise the diff before dispatching.** `git diff <fixed-point>...HEAD > /tmp/<name>.diff` and paste its path into the prompt. A reviewer told to run `git show` answers from whatever files it can open and still reports "confirmed", so a verdict can be weaker than its wording implies. If the review must speak about a specific commit, hand it `git show <sha>` output, not the SHA.
+- **Pre-run the checks yourself and paste the output.** Asking a reviewer to run a test costs a call, comes back as "report any test command a supervisor must run", and leaves the diff's claims unverified. Run `bash -n`, the test suite, or the repro command first; the reviewer judges the transcript.
 
 **Standards sub-agent prompt** should include:
 
-- The materialised diff path (and `git show <sha>` text when the review is about one commit), plus the commit list.
+- The diff path from the rule above (and `git show <sha>` text when the review is about one commit), plus the commit list.
 - The list of standards-source files you found in step 3, **plus the smell baseline from step 3** pasted in full (the sub-agent has no other access to it).
 - The brief: "Report, per file/hunk where relevant, (a) every place the diff violates a documented standard: cite the standard (file + the rule); and (b) any baseline smell you spot: name it and quote the hunk. Distinguish hard violations from judgement calls: documented-standard breaches can be hard, but baseline smells are always judgement calls, and a documented repo standard overrides the baseline. Skip anything tooling enforces. Under 400 words."
 
 **Spec sub-agent prompt** should include:
 
-- The same materialised diff and commit list (it has no shell either).
+- The same diff and commit list (it has no shell either).
 - The path or fetched contents of the spec.
 - The brief: "Report: (a) requirements the spec asked for that are missing or partial; (b) behaviour in the diff that wasn't asked for (scope creep); (c) requirements that look implemented but where the implementation looks wrong. Quote the spec line for each finding. Under 400 words."
 

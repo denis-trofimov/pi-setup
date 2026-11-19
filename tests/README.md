@@ -1,17 +1,17 @@
 # tests
 
-Run these from the repo root. Nothing here needs Docker except `docker-e2e.sh`, and nothing
-needs network except `browser-uat-login-proxy.sh`.
+Run these from the repo root. The full list with one line of scope each is under
+[Manual tests](../README.md#manual-tests) — this page adds only what that list cannot say:
+how to test a script that writes outside the repo.
 
-```bash
-./tests/home-dotfiles.sh          # install/uninstall/revert of home/ dotfiles
-bash tests/ru-spellcheck-repo-dict.sh
-node --test tests/*.test.mjs
-```
+Nothing here is gated automatically today. `prek.toml` runs its hooks on commit, and
+everything else is manual: `bash -n` on `bin/*` and `*.sh`, `node --test tests/*.test.mjs`,
+the shell tests, `tests/docker-e2e.sh`. No CI job exists yet; a workflow that runs the fast
+checks is in open PR #19. Until it merges, "the tests pass" means someone ran them.
 
-`.github/workflows/ci.yml` runs the `bash -n` pass, `node --test`, and every `tests/*.sh`
-except `docker-e2e.sh`, which brings up a container and runs a full install (minutes +
-Docker, deliberately outside CI).
+`docker-e2e.sh` is the only test that leaves the machine: it clones this repo from its git
+remote inside a container. `browser-uat-login-proxy.sh` stubs Playwright and fails on
+`goto`, so it reaches no network at all.
 
 ## Testing a script that writes to `$HOME`
 
@@ -22,11 +22,13 @@ rules, both learned the hard way:
 **Never `cp -a` a worktree into `/tmp` to get a disposable copy.** A worktree's `.git` is a
 *file* holding an absolute path to the real gitdir, so a commit made in the copy lands on
 the branch in the worktree — author and all. On 2026-11-19 a `git commit -m wip` in
-`/tmp/sync-test` did exactly that. Use `git clone`:
+`/tmp/sync-test` did exactly that. Use `git clone`, and because a clone carries the
+*committed* scripts rather than the ones under review, copy them over:
 
 ```bash
 clone="$(mktemp -d)/clone"
-git clone -q "$ROOT" "$clone"     # a real .git directory, isolated branch
+git clone -q --no-hardlinks "$ROOT" "$clone"   # a real .git directory, isolated branch
+cp "$ROOT/sync.sh" "$ROOT/install.sh" "$clone/" # test the working tree, not the last commit
 ```
 
 **Seed a fake Pi home with the installer itself** instead of hand-writing `settings.json`:

@@ -748,9 +748,10 @@ captured only if the repo already tracks them, so a stray `~/.bashrc` is never s
 `./uninstall.sh` removes `~/.tmux.conf` only when it is still byte-identical to the repo
 copy.
 
-Screenshots of the result go through [docs/screenshots.md](docs/screenshots.md): on KDE/Wayland
-`import` cannot read the root window, and `spectacle -f` captures every window — including other
-sessions — so capture one window with `spectacle -b -n -o`.
+A native window (this tmux window) is captured per [docs/screenshots.md](docs/screenshots.md):
+`import` cannot read the root window on KDE/Wayland, and spectacle's default mode is the whole
+desktop — including other sessions — so pass `-a` and capture the one window. A web page goes to
+the `browser-uat` skill instead, which screenshots through Playwright.
 
 `tests/home-dotfiles.sh` covers that contract against throwaway `$HOME` directories — no
 Docker, no network: plain install leaves the file alone, `--copy-config` keeps a `.bak`
@@ -776,15 +777,17 @@ Validate a change on a throwaway server before it touches the live one — `-L` 
 socket, so nothing can leak into the session you are working in:
 
 ```bash
-tmux -L cfgtest -f ~/.tmux.conf new-session -d -s t -x 200 -y 45   # -s names the session, -n names a window
+tmux -L cfgtest -f ~/.tmux.conf new-session -d -s t -x 200 -y 45   # -x/-y size it like a real client
 tmux -L cfgtest show -gv mouse \; show -gv default-terminal        # what actually took effect
+tmux -L cfgtest split-window -h 'less --mouse README.md'            # an app that asks for mouse events
 tmux -L cfgtest list-panes -a -F '#{pane_id} active=#{pane_active} mouse=#{mouse_any_flag} #{pane_width}x#{pane_height}'
 tmux -L cfgtest kill-server
 ```
 
-`show -g` proves the option parsed; `list-panes` proves the behaviour — `mouse_any_flag` turns `1`
-when a pane's app asked for mouse events (`less --mouse`), which is what "the wheel reaches the
-app" looks like from the outside. A removed option fails loudly here (`invalid option: mode-mouse`)
+`show -gv` proves the option parsed; `list-panes` proves the behaviour — `mouse_any_flag` turns `1`
+only for the pane whose app asked for mouse events, which is what "the wheel reaches the app"
+looks like from the outside. A detached session with a bare shell reports `0` everywhere, so the
+split with `less --mouse` is what makes the check mean anything. A removed option fails loudly here (`invalid option: mode-mouse`)
 instead of at the next attach.
 
 ## Do not commit
