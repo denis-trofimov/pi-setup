@@ -39,7 +39,14 @@ function stubDirectory() {
 
 test("каждый bin/* отвечает на --help кодом 0 и настоящей справкой", () => {
 	const stubs = stubDirectory();
-	const helpers = readdirSync(BIN_DIR);
+	// Только обычные файлы: `bin/__pycache__` появляется от `python3 -m py_compile bin/ru-spellcheck`
+	// (шаг CI прямо перед этим тестом, и та же команда в ручной проверке). Каталог в списке давал
+	// `--help` с кодом null, то есть красный CI на ровном месте — в сессии #15861 локальный прогон
+	// был зелёным только потому, что `__pycache__` ещё не успел появиться.
+	const helpers = readdirSync(BIN_DIR, { withFileTypes: true })
+		.filter((entry) => entry.isFile() && !entry.name.startsWith("."))
+		.map((entry) => entry.name)
+		.sort();
 	assert.ok(helpers.length >= 3, `в bin/ нечего проверять: ${helpers.join(", ")}`);
 
 	const failures = [];
