@@ -974,18 +974,20 @@ warn_prunable_worktrees() {
     branch="$(git -C "$entry" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
     tip="$(git -C "$entry" rev-parse -q --verify HEAD 2>/dev/null || true)"
     [[ -n "$branch" && -n "$tip" && "$branch" != "HEAD" ]] || continue
+    how=""
+    if git -C "$ROOT" merge-base --is-ancestor "$tip" "$base" 2>/dev/null; then
+      how="смержено"
+    else
+      # Тот же патч может лежать в базе без коммита-предка (squash): об этом говорит только cherry.
+      ahead="$(git -C "$ROOT" cherry "$base" "$tip" 2>/dev/null | grep -c '^+' || true)"
+      [[ "${ahead:-1}" == "0" ]] && how="патчи уже в базе (squash-мерж)"
+    fi
+    [[ -n "$how" ]] || continue
     dirty="$(git -C "$entry" status --porcelain 2>/dev/null || true)"
     if [[ -n "$dirty" ]]; then
-      echo "note: воркдерево $entry ($branch) смержено, но несёт незакоммиченные правки — не удалять"
-      continue
-    fi
-    if git -C "$ROOT" merge-base --is-ancestor "$tip" "$base" 2>/dev/null; then
-      echo "note: воркдерево $entry ($branch) содержит только смерженное — можно убрать"
-      continue
-    fi
-    ahead="$(git -C "$ROOT" cherry "$base" "$tip" 2>/dev/null | grep -c '^+' || true)"
-    if [[ "${ahead:-1}" == "0" ]]; then
-      echo "note: воркдерево $entry ($branch) — патчи уже в базе (squash-мерж), можно убрать"
+      echo "note: воркдерево $entry ($branch) $how, но есть незакоммиченные правки — убрать после разбора"
+    else
+      echo "note: воркдерево $entry ($branch) $how — можно убрать"
     fi
   done < <(git -C "$ROOT" worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p')
 }
