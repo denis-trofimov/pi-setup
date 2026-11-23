@@ -38,8 +38,9 @@ with a false suggestion (#15836 п.3). The denylist is not consulted by
 `--homoglyph-only`: that gate is about scripts, and mixed-script deny entries are caught there as
 HOMOGLYPH anyway.
 
-Gate: `--homoglyph-only` is the gate for short prose (a chat message, a Redmine note, a commit
-body): zero false positives, exit 1 on a hit. It sees only script mixing, so a long document —
+Gate: `--homoglyph-only` is the gate for short prose (a chat message, a Redmine note): zero false
+positives, exit 1 on a hit. A commit body is usually longer than 40 lines, so it takes the full
+check (or `--allow-long`) instead: `ru-spellcheck - < /tmp/msg.txt`. It sees only script mixing, so a long document —
 a hand-off note, a README, a task description — passes it while losing its vowels (сесии,
 велечину, скрыпт), and that class needs the dictionary. A long input is therefore refused with
 exit 3 and a hint to run the full check, rather than reported clean (#15799 п.2). The threshold
@@ -320,6 +321,11 @@ def has_dictionary_base(d, low):
             continue
         base = low[: -len(ending)]
         if len(base) < 4:
+            continue
+        if d.check(base):
+            # Основа сама по себе есть в словаре — значит это опечатка «слово + гласная»: `документо`,
+            # `сервисо`, `системо`, а не падеж слова с другой основой. Замер ревью: все девять
+            # таких слов проходили именно здесь, а у цели правки (`марж`) основы в словаре нет.
             continue
         if any(d.check(base + tail) for tail in BASE_TAILS):
             return True

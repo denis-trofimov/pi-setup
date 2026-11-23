@@ -29,6 +29,8 @@ mkdir -p "$XDG_CONFIG_HOME/ru-spellcheck"
 # No dictionary — the tool says so itself with code 2; that is a skip, not a failure.
 printf 'Расчёт маржой закрыт.\n' > "$WORK/probe.md"
 if ! "$TOOL" "$WORK/probe.md" >/dev/null 2>&1; then
+    # `$?` после `if !` — код инвертированного условия, то есть 0; спрашиваем заново.
+    "$TOOL" "$WORK/probe.md" >/dev/null 2>&1
     status=$?
     [[ $status -eq 2 ]] && { echo "SKIP: нет словаря hunspell ru_RU"; exit 77; }
 fi
@@ -40,10 +42,10 @@ if ! out="$("$TOOL" "$WORK/ok.md" 2>&1)"; then
 fi
 
 # 2. Класс редукции гласных остаётся красным, каждое слово названо в отчёте.
-corrupted='нузен открито которий деньгы напровление велечину скрыпт сесии стот'
+corrupted='нузен открито которий деньгы напровление велечину скрыпт сесии стот документо сервисо системо таблицо'
 printf '%s\n' "$corrupted" > "$WORK/bad.md"
 if out="$("$TOOL" "$WORK/bad.md" 2>&1)"; then
-    fail "редукция гласных прошла молча: $out"
+    fail "редукция гласных и «слово + гласная» прошли молча: $out"
 fi
 for word in $corrupted; do
     grep -q "SPELLING  $word" <<<"$out" || fail "«$word» не названо находкой: $out"

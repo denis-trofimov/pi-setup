@@ -39,8 +39,11 @@ const READ_LIMIT_BYTES = 51200;
 /** Диапазон печати `sed -n`: `1,20p`, `5p`, `120,400p`. */
 const SED_PRINT_RANGE = /^\d+(?:,\d+)?p$/;
 
-/** `~/`, `$HOME` и домашний каталог этой машины — путь, поиск по которому дороже выгоды. */
-const HOME_PATHS = [".", "./", "~", "~/", "$HOME", "${HOME}", "/home/denis", "/home/denis/"];
+/**
+ * Корень репозитория и весь домашний каталог: поиск по ним дороже выгоды. Подкаталог (`~/p`,
+ * `/home/denis/p`) в список не входит — там поиск законный, и правило не должно его запрещать.
+ */
+const BROAD_PATHS = [".", "./", "~", "~/", "$HOME", "${HOME}", "/home/denis", "/home/denis/"];
 
 /** Команда, у которой нет полезной части: только переход в каталог, `true`, `:` или `exit 0`. */
 const NOOP_SEGMENT = /^(?:true|:)\s*$|^exit(?:\s+0)?\s*$/;
@@ -149,6 +152,9 @@ function readingVerdict(segment) {
 	}
 
 	if (command === "cat") {
+		// `cat > файл`, `cat >> журнал`, `cat <<EOF` — это запись и heredoc, а не чтение: их правило
+		// не трогает (иначе блокировался бы самый обычный способ создать временный файл).
+		if (args.some((token) => token.includes(">") || token.startsWith("<"))) return null;
 		const files = operands(args);
 		if (files.length === 0 || files.includes("-")) return null;
 		if (!files.some((file) => readsSmallFile(file))) return null;
@@ -164,7 +170,7 @@ function readingVerdict(segment) {
 	const positional = operands(args);
 	if (recursive) {
 		const paths = positional.slice(1);
-		const broad = paths.some((path) => HOME_PATHS.includes(path) || path.startsWith("~/"));
+		const broad = paths.some((path) => BROAD_PATHS.includes(path) || path === "/home/denis/.");
 		if (!broad) return null;
 		return {
 			allowed: false,
@@ -233,6 +239,30 @@ function unwrapped(segment) {
 		if (next === null || next === text || next === "") return next ?? text;
 		text = next;
 	}
+}
+
+/**
+ * Первая ступень конвейера: текст до первого `|` вне кавычек. `grep -n 'a|b' файл` — один сегмент,
+ * а не две ступени; без этого разбор кавычек съел бы шаблон и заблокировал чтение зря.
+ *
+ * @param {string} segment
+ * @returns {string}
+ */
+export function firstPipelineStage(segment) {
+	let quote = null;
+	for (let i = 0; i < segment.length; i += 1) {
+		const char = segment[i];
+		if (quote !== null) {
+			if (char === quote) quote = null;
+			continue;
+		}
+		if (char === "'" || char === '"') {
+			quote = char;
+			continue;
+		}
+		if (char === "|") return segment.slice(0, i);
+	}
+	return segment;
 }
 
 /**
@@ -312,11 +342,15 @@ export function classifyCall(command, options = {}) {
 	}
 
 	for (const raw of segments) {
+		// Чтение проверяется и в конвейере, по первой ступени: `cat файл | head` — тот же `cat`, и
+		// именно `| head` был самым естественным обходом правила (замер ревью: 26 вызовов `sed -n`,
+		// ради которых правило написано, проходили ровно так). Правило 2 наоборот требует конвейер
+		// как признак фильтра, поэтому ниже сегменты с `|` по-прежнему пропускаются.
+		const reading = readingVerdict(unwrapped(firstPipelineStage(raw)));
+		if (reading !== null) return reading;
+
 		if (/\|/.test(raw)) continue;
 		const segment = unwrapped(raw);
-
-		const reading = readingVerdict(segment);
-		if (reading !== null) return reading;
 
 		if (SED_IN_PLACE.test(segment)) {
 			return {

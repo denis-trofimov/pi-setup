@@ -212,13 +212,29 @@ test("файл больше 50 КБ, каталог и конвейер чтен
 	}
 });
 
+test("конвейер не обходит правило чтения, а запись через cat — не чтение", () => {
+	for (const command of [
+		`cat ${smallFile} | head -5`,
+		`sed -n '1,20p' ${smallFile} | head`,
+		`grep -n foo ${smallFile} | wc -l`,
+	]) {
+		assert.equal(classifyCall(command).allowed, false, command);
+	}
+	for (const command of [
+		"cat > /tmp/guard-scratch.txt <<'EOF'\ntext\nEOF",
+		`cat ${smallFile} > /tmp/guard-scratch-copy.txt`,
+	]) {
+		assert.equal(classifyCall(command).allowed, true, command);
+	}
+});
+
 test("grep -r по домашнему каталогу и корню репозитория блокируется", () => {
 	for (const command of ["grep -r foo /home/denis", "grep -rn foo .", "grep -r foo ~/", "grep --recursive foo /home/denis/"]) {
 		const verdict = classifyCall(command);
 		assert.equal(verdict.allowed, false, command);
 		assert.match(verdict.reason, /grep -r/, command);
 	}
-	for (const command of ["grep -r foo src/", `grep -rn foo ${subdir}`, "rg -n 'foo' ."]) {
+	for (const command of ["grep -r foo src/", `grep -rn foo ${subdir}`, "rg -n 'foo' .", "grep -r foo ~/p"]) {
 		assert.equal(classifyCall(command).allowed, true, command);
 	}
 });
