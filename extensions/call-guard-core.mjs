@@ -181,7 +181,8 @@ function readingVerdict(segment) {
 
 	const numbered = args.some((token) => token === "--line-number" || /^-[a-zA-Z]*n[a-zA-Z]*$/.test(token));
 	const files = positional.slice(1);
-	if (!numbered || files.length === 0) return null;
+	// `grep -n шаблон -` читает stdin: файла нет, и правило чтения файла к нему не относится.
+	if (!numbered || files.length === 0 || files.includes("-")) return null;
 	const suspicious = files.some((file) => {
 		const probe = probeFile(file);
 		return probe !== null && !probe.isFile ? false : readsSmallFile(file);

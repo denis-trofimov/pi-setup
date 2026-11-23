@@ -28,11 +28,13 @@ mkdir -p "$XDG_CONFIG_HOME/ru-spellcheck"
 
 # No dictionary — the tool says so itself with code 2; that is a skip, not a failure.
 printf 'Расчёт маржой закрыт.\n' > "$WORK/probe.md"
-if ! "$TOOL" "$WORK/probe.md" >/dev/null 2>&1; then
-    # `$?` после `if !` — код инвертированного условия, то есть 0; спрашиваем заново.
-    "$TOOL" "$WORK/probe.md" >/dev/null 2>&1
-    status=$?
-    [[ $status -eq 2 ]] && { echo "SKIP: нет словаря hunspell ru_RU"; exit 77; }
+# Код берётся через `||`, а не `$?` после `if !`: под `set -e` упавший вызов внутри `then` обрывает
+# скрипт до проверки статуса, и SKIP (77) остаётся мёртвой веткой.
+status=0
+"$TOOL" "$WORK/probe.md" >/dev/null 2>&1 || status=$?
+if [[ $status -eq 2 ]]; then
+    echo "SKIP: нет словаря hunspell ru_RU"
+    exit 77
 fi
 
 # 1. Творительный падеж со словарной основой — не находка.

@@ -223,6 +223,7 @@ test("конвейер не обходит правило чтения, а за�
 	for (const command of [
 		"cat > /tmp/guard-scratch.txt <<'EOF'\ntext\nEOF",
 		`cat ${smallFile} > /tmp/guard-scratch-copy.txt`,
+		'printf "x" | grep -n x -',
 	]) {
 		assert.equal(classifyCall(command).allowed, true, command);
 	}
