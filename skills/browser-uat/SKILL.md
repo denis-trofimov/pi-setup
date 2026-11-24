@@ -77,6 +77,12 @@ root answers 200 to a guest, so a rejected login would be written as a success a
 overwrite a working session in `current.json`. A `--success` that points into the login
 area (`/admin/login/index` answers 200 to a guest too) is never confirmed by the probe.
 
+Assumption worth knowing: the probe accepts any 2xx/3xx answered outside `/login` as
+proof of a session. That holds where a guest is redirected to a path containing `/login`
+(msb-lk: `/admin` → `/admin/login/index`, cabinet → `/site/login`); a stand that sends a
+guest elsewhere, or an SPA route that answers 200 to anyone, would confirm a guest — pick
+`--success` accordingly.
+
 After that the MCP server picks the state up on its next start: the Xvfb wrapper
 exports `PLAYWRIGHT_MCP_STORAGE_STATE` when the file exists, and `--isolated`
 still keeps the profile in memory. So the server has to be (re)started once

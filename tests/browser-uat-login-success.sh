@@ -145,6 +145,8 @@ run farm UAT_LOGIN_SUCCESS='/admin/login/index'
 [[ "$RC" == "1" ]] || fail "--success в области входа: гость назван вошедшим (код $RC): $OUT"
 [[ -e "$STATE" ]] && fail "--success в области входа: файл состояния записан: $OUT"
 grep -q '"get"' "$CALLS" && fail "--success в области входа: запрос к странице входа всё-таки сделан: $(cat "$CALLS")"
+grep -q 'проверка не выполнялась' <<<"$OUT" || fail "--success в области входа: проверка названа выполненной: $OUT"
+grep -q 'ведёт в область входа' <<<"$OUT" && fail "--success в области входа: рассказан невыполненный запрос: $OUT"
 
 # --- probe-broken: the path or the stand is wrong, the login is not ------------------------
 run probe-broken

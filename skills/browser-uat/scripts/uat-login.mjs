@@ -80,20 +80,20 @@ function loggedIn(current) {
 // be answered outside the login area. A guest is redirected there to the sign-in page (any path
 // with /login), an authenticated session is not.
 //
-// `kind` keeps three different outcomes apart, because "вход не прошёл" about a live session with
-// no backend access, or about a probe that never reached the stand, sends the reader hunting the
-// wrong thing:
-//   session   — authenticated session, access to --success granted
-//   guest     — redirected into the login area, or a 401: the login itself did not take
-//   forbidden — 403: session exists, but this user has no access to --success
-//   broken    — 404/5xx: the path is wrong or the stand is sick, not the login
-//   unchecked — the probe did not reach the stand (network, proxy)
+// `kind` keeps the outcomes apart, because "вход не прошёл" about a live session with no backend
+// access, or about a probe that never reached the stand, sends the reader hunting the wrong thing:
+//   session     — authenticated session, access to --success granted
+//   guest       — redirected into the login area, or a 401: the login itself did not take
+//   login-area  — --success itself points into the login area; no request is made
+//   forbidden   — 403: session exists, but this user has no access to --success
+//   broken      — 404/5xx: the path is wrong or the stand is sick, not the login
+//   unchecked   — the probe did not reach the stand (network, proxy)
 async function probeSuccess(context) {
   try {
     const probeUrl = new URL(success, url).toString();
     // The same asymmetry the URL predicate already rejects: /admin/login/index answers 200 to a
     // guest, so a --success pointing into the login area would "confirm" a failed login.
-    if (/\/login/.test(new URL(probeUrl).pathname)) return { ok: false, status: 'путь входа', kind: 'guest' };
+    if (/\/login/.test(new URL(probeUrl).pathname)) return { ok: false, kind: 'login-area' };
     const response = await context.request.get(probeUrl, {
       maxRedirects: 0,
       failOnStatusCode: false,
@@ -244,11 +244,15 @@ try {
       console.error(
         `uat-login: ${success} ответил ${probe.status} — вход тут ни при чём, проверь путь --success и состояние стенда (cookie ${cookies})`
       );
+    } else if (probe.kind === 'login-area') {
+      console.error(
+        `uat-login: --success ${success} указывает в область входа, проверка не выполнялась (cookie ${cookies})`
+      );
+      console.error('uat-login: укажи путь, доступный только авторизованной сессии');
     } else {
-      const detail = probe.kind === 'guest'
-        ? `запрос ${success} ведёт в область входа (${probe.status}), cookie ${cookies}`
-        : `адрес под ${success}, но подтверждения нет, cookie ${cookies}`;
-      console.error(`uat-login: вход не прошёл — страница ${landed.pathname} («${title}»), ${detail}`);
+      console.error(
+        `uat-login: вход не прошёл — страница ${landed.pathname} («${title}»), запрос ${success} ведёт в область входа (${probe.status}), cookie ${cookies}`
+      );
       console.error('uat-login: проверь значения в .env, срок действия кода и селекторы формы');
     }
     process.exitCode = 1;
