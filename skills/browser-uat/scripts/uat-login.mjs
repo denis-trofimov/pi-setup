@@ -63,6 +63,7 @@ const proxyBypass = env.UAT_LOGIN_PROXY_BYPASS || '';
 // Chromium has no "direct" switch of its own: --no-proxy-server is the only way to pin the
 // direct route, so it is passed explicitly instead of relying on the environment.
 const noProxy = env.UAT_LOGIN_NO_PROXY === '1';
+const timeout = Number(env.UAT_LOGIN_TIMEOUT || 20000);
 
 // "Under --success" is not enough on its own: with the default /admin the login
 // page itself is /admin/login/index, so a rejected code would look like a
@@ -72,12 +73,20 @@ function loggedIn(current) {
   return path.startsWith(success) && !path.includes('/login');
 }
 
-// The landed URL alone says "login failed" about a working session: the farm answers a signed-in
-// user from /admin with a redirect to "/", not to /admin (#16027 п.2 — three cookies written and
+// The landed URL alone says "login failed" about a working session: on the farm the browser ends up
+// on "/" after a successful submit, not under /admin (#16027 п.2 — three cookies written and
 // "вход не прошёл — страница /, ожидался путь /admin"). So when the URL does not land under
 // --success, the app itself is asked: a request to --success with the cookies just obtained should
-// be answered outside the login area. A guest is redirected to /login there, an authenticated
-// session is not, whatever the stand's redirect target is.
+// be answered outside the login area. A guest is redirected there to the sign-in page (any path
+// with /login), an authenticated session is not.
+//
+// `kind` keeps three different outcomes apart, because "вход не прошёл" about a live session with
+// no backend access, or about a probe that never reached the stand, sends the reader hunting the
+// wrong thing:
+//   session   — authenticated session, access to --success granted
+//   guest     — redirected into the login area, or a 401: the login itself did not take
+//   forbidden — 403: session exists, but this user has no access to --success
+//   unchecked — the probe did not reach the stand (network, proxy)
 async function probeSuccess(context) {
   try {
     const probeUrl = new URL(success, url).toString();
@@ -88,13 +97,14 @@ async function probeSuccess(context) {
     });
     const status = response.status();
     const location = response.headers().location || '';
-    if (status < 200 || status >= 400) return { ok: false, status };
-    return { ok: !/\/login/.test(location), status };
+    if (status === 403) return { ok: false, status, kind: 'forbidden' };
+    if (status < 200 || status >= 400) return { ok: false, status, kind: 'guest' };
+    if (/\/login/.test(location)) return { ok: false, status, kind: 'guest' };
+    return { ok: true, status, kind: 'session' };
   } catch (error) {
-    return { ok: false, status: 'ошибка запроса: ' + String(error).split('\n')[0] };
+    return { ok: false, status: 'ошибка запроса: ' + String(error).split('\n')[0], kind: 'unchecked' };
   }
 }
-const timeout = Number(env.UAT_LOGIN_TIMEOUT || 20000);
 
 function usage(message) {
   console.error(`uat-login: ${message}`);
@@ -103,6 +113,16 @@ function usage(message) {
 }
 
 if (!url || !phone || !code || !statePath) usage('не заданы обязательные переменные окружения');
+
+// A root --success degenerates both checks: startsWith('/') is always true, and the public "/"
+// answers 200 to a guest too — so a rejected login would be written as a success and overwrite a
+// working session in current.json (#16027 п.2).
+if (success === '/') {
+  console.error('uat-login: --success «/» не годится: и проверка по адресу, и проверка запросом вырождаются —');
+  console.error('uat-login: публичный / отвечает 200 и гостю, поэтому отклонённый вход запишется как успешный.');
+  console.error('uat-login: оставь дефолтный /admin — вход подтверждается запросом к нему с полученными cookie.');
+  process.exit(2);
+}
 
 function loadPlaywright() {
   const root = env.UAT_PLAYWRIGHT_ROOT || '';
@@ -197,10 +217,24 @@ try {
 
   if (!confirmed || cookies === 0) {
     const title = await page.title().catch(() => '');
-    console.error(
-      `uat-login: вход не прошёл — страница ${landed.pathname} («${title}»), запрос ${success} без cookie входа — ${probe.status}, cookie ${cookies}`
-    );
-    console.error('uat-login: проверь значения в .env, срок действия кода, селекторы формы и доступность стенда');
+    if (probe.kind === 'unchecked') {
+      // The stand never answered the probe: this is not a verdict on the login, and calling it
+      // "вход не прошёл" would send the reader to the form instead of the route.
+      console.error(`uat-login: состояние не проверено — ${success}: ${probe.status}`);
+      console.error('uat-login: файл состояния не записан. Проверь доступ к стенду и UAT_LOGIN_PROXY_SERVER,');
+      console.error('uat-login: либо подтверди вход в браузере вручную — страница ' + landed.pathname);
+    } else if (probe.kind === 'forbidden') {
+      console.error(
+        `uat-login: вход есть, но доступа к ${success} нет — ${probe.status} (сессия живая: cookie ${cookies})`
+      );
+      console.error(`uat-login: проверь права пользователя на ${success} или укажи другой --success`);
+    } else {
+      const detail = probe.status === 'не понадобился'
+        ? `адрес под ${success}, но cookie не записано`
+        : `запрос ${success} без cookie входа — ${probe.status}, cookie ${cookies}`;
+      console.error(`uat-login: вход не прошёл — страница ${landed.pathname} («${title}»), ${detail}`);
+      console.error('uat-login: проверь значения в .env, срок действия кода, селекторы формы и доступность стенда');
+    }
     process.exitCode = 1;
   } else {
     // Write-then-rename: a /reload in the middle of the write must not read half

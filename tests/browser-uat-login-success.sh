@@ -47,6 +47,8 @@ const LANDING = {
   farm: 'http://localhost/',
   landed: 'http://localhost/admin/schedule/update?id=24568',
   'probe-guest': 'http://localhost/',
+  'probe-forbidden': 'http://localhost/',
+  'probe-error': 'http://localhost/',
 };
 
 module.exports = {
@@ -77,6 +79,8 @@ module.exports = {
         request: {
           async get(url, options) {
             record({ get: url, options });
+            if (scenario === 'probe-error') throw new Error('net::ERR_TUNNEL_CONNECTION_FAILED');
+            if (scenario === 'probe-forbidden') return { status: () => 403, headers: () => ({}) };
             if (scenario === 'probe-guest') {
               return { status: () => 302, headers: () => ({ location: 'http://localhost/admin/login/index' }) };
             }
@@ -91,9 +95,11 @@ module.exports = {
 };
 EOF
 
-# run <scenario> — one full login against the stub; sets OUT, RC, STATE, CALLS for the assertions.
+# run <scenario> [extra env assignments...] — one full login against the stub; sets OUT, RC,
+# STATE, CALLS for the assertions.
 run() {
   local scenario="$1" rc=0
+  shift
   STATE="$WORK/state-$scenario.json"
   CALLS="$WORK/calls-$scenario.log"
   : > "$CALLS"
@@ -101,7 +107,7 @@ run() {
   OUT="$(env HOME="$WORK/home" UAT_PLAYWRIGHT_ROOT="$WORK/fake-pw" STUB_SCENARIO="$scenario" \
     STUB_CALLS="$CALLS" UAT_LOGIN_URL='http://localhost/admin/login/sign-in' \
     UAT_LOGIN_PHONE='+79990000000' UAT_LOGIN_CODE='1234' UAT_LOGIN_STATE="$STATE" \
-    node "$LOGIN" 2>&1)" || rc=$?
+    "$@" node "$LOGIN" 2>&1)" || rc=$?
   RC="$rc"
 }
 
@@ -128,5 +134,25 @@ run probe-guest
 [[ -e "$STATE" ]] && fail "гость: файл состояния записан без сессии: $OUT"
 grep -q 'вход не прошёл' <<<"$OUT" || fail "гость: отказ не назван словами: $OUT"
 grep -q '— 302' <<<"$OUT" || fail "гость: ответ проверки не назван: $OUT"
+
+# --- probe-forbidden: session exists, this user has no access to --success ------------------
+run probe-forbidden
+[[ "$RC" == "1" ]] || fail "403: отказ не назван (код $RC): $OUT"
+[[ -e "$STATE" ]] && fail "403: файл состояния записан без доступа: $OUT"
+grep -q 'доступа к /admin нет' <<<"$OUT" || fail "403: нет доступа не назван отдельно: $OUT"
+grep -q 'вход не прошёл' <<<"$OUT" && fail "403: живая сессия названа отказом входа: $OUT"
+
+# --- probe-error: the stand never answered the probe ---------------------------------------
+run probe-error
+[[ "$RC" == "1" ]] || fail "сеть: провал не назван (код $RC): $OUT"
+[[ -e "$STATE" ]] && fail "сеть: файл состояния записан без проверки: $OUT"
+grep -q 'состояние не проверено' <<<"$OUT" || fail "сеть: проверка не названа непроведённой: $OUT"
+grep -q 'вход не прошёл' <<<"$OUT" && fail "сеть: неотвеченный запрос назван отказом входа: $OUT"
+
+# --- --success / is refused: it degenerates both checks and would write a guest state ------
+run farm UAT_LOGIN_SUCCESS='/'
+[[ "$RC" == "2" ]] || fail "--success /: вырожденный флаг не отклонён (код $RC): $OUT"
+[[ -e "$STATE" ]] && fail "--success /: файл состояния записан: $OUT"
+grep -q 'не годится' <<<"$OUT" || fail "--success /: отказ не назван: $OUT"
 
 echo "OK: uat-login считает вход по состоянию сессии, а не по адресу (#16027 п.2)"

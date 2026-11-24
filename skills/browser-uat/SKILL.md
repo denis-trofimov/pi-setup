@@ -55,15 +55,22 @@ tree into the repo checkout. The values travel through the environment, never
 argv — argv is visible in `ps`.
 
 How the login is judged: `--success` (default `/admin`) is a path only an
-authenticated session sees, but the redirect after the submit is **not** required to
-land there. The farm answers a signed-in user who opens `/admin` with a redirect to
-`/`, and judging by the URL alone printed «вход не прошёл — страница /, ожидался путь
-/admin» about a live session with three cookies (#16027 п.2). So when the browser does
-not land under `--success`, the script asks the app itself: a request to `--success`
-with the cookies just obtained must be answered outside the login area — a guest is
-redirected to `/login` there, an authenticated session is not, whatever the stand's
-redirect target is. The state file is written only after that check passes, so the
-false negative is what leaves the MCP browser as a guest while the session was fine.
+authenticated session sees, but the address after the submit is **not** required to
+land there. On the farm a successful login ends on `/`, not on `/admin` (a guest is
+redirected from `/admin` to `/admin/login/index`), and judging by the URL alone printed
+«вход не прошёл — страница /, ожидался путь /admin» about a live session with three
+cookies (#16027 п.2). So when the browser does not land under `--success`, the script
+asks the app itself: a request to `--success` with the cookies just obtained must be
+answered outside the login area — a guest is redirected to a sign-in path containing
+`/login`, an authenticated session is not.
+
+The state file is written only after that check passes, and the three failures are
+named differently on purpose: `guest` (login did not take), `forbidden` (403 — the
+session is live, this user just has no access to `--success`), `unchecked` (the probe
+never reached the stand — network or proxy, with `UAT_LOGIN_PROXY_SERVER` as the hint).
+`--success /` is refused with exit 2: `startsWith('/')` is always true and the public
+root answers 200 to a guest, so a rejected login would be written as a success and
+overwrite a working session in `current.json`.
 
 After that the MCP server picks the state up on its next start: the Xvfb wrapper
 exports `PLAYWRIGHT_MCP_STORAGE_STATE` when the file exists, and `--isolated`
