@@ -86,10 +86,14 @@ function loggedIn(current) {
 //   session   — authenticated session, access to --success granted
 //   guest     — redirected into the login area, or a 401: the login itself did not take
 //   forbidden — 403: session exists, but this user has no access to --success
+//   broken    — 404/5xx: the path is wrong or the stand is sick, not the login
 //   unchecked — the probe did not reach the stand (network, proxy)
 async function probeSuccess(context) {
   try {
     const probeUrl = new URL(success, url).toString();
+    // The same asymmetry the URL predicate already rejects: /admin/login/index answers 200 to a
+    // guest, so a --success pointing into the login area would "confirm" a failed login.
+    if (/\/login/.test(new URL(probeUrl).pathname)) return { ok: false, status: 'путь входа', kind: 'guest' };
     const response = await context.request.get(probeUrl, {
       maxRedirects: 0,
       failOnStatusCode: false,
@@ -97,8 +101,10 @@ async function probeSuccess(context) {
     });
     const status = response.status();
     const location = response.headers().location || '';
+    if (status === 401) return { ok: false, status, kind: 'guest' };
     if (status === 403) return { ok: false, status, kind: 'forbidden' };
-    if (status < 200 || status >= 400) return { ok: false, status, kind: 'guest' };
+    if (status >= 400) return { ok: false, status, kind: 'broken' };
+    if (status < 200) return { ok: false, status, kind: 'broken' };
     if (/\/login/.test(location)) return { ok: false, status, kind: 'guest' };
     return { ok: true, status, kind: 'session' };
   } catch (error) {
@@ -194,9 +200,8 @@ try {
   await page.fill(codeField, code);
 
   console.log('uat-login: отправляю форму');
-  // Success is "the URL now sits under --success", not "the URL is no longer the
-  // login page": a failed submit that lands anywhere else would otherwise count
-  // as a login, and a state file with zero cookies would be written silently.
+  // The URL under --success is the fast path and nothing more: when the browser lands elsewhere (the
+  // farm ends on "/"), the outcome is decided by probeSuccess() below.
   await page.click(submitSelector);
   const landedUnderSuccess = await page
     .waitForURL(loggedIn, { timeout: Math.max(timeout, 30000) })
@@ -217,7 +222,14 @@ try {
 
   if (!confirmed || cookies === 0) {
     const title = await page.title().catch(() => '');
-    if (probe.kind === 'unchecked') {
+    if (cookies === 0) {
+      // Nothing to probe with: the form did not leave a session behind, so no request is made at
+      // all and saying otherwise would invent evidence.
+      console.error(
+        `uat-login: вход не прошёл — страница ${landed.pathname} («${title}»), cookie не записано; проверка запросом не выполнялась`
+      );
+      console.error('uat-login: проверь значения в .env, срок действия кода и селекторы формы');
+    } else if (probe.kind === 'unchecked') {
       // The stand never answered the probe: this is not a verdict on the login, and calling it
       // "вход не прошёл" would send the reader to the form instead of the route.
       console.error(`uat-login: состояние не проверено — ${success}: ${probe.status}`);
@@ -228,12 +240,16 @@ try {
         `uat-login: вход есть, но доступа к ${success} нет — ${probe.status} (сессия живая: cookie ${cookies})`
       );
       console.error(`uat-login: проверь права пользователя на ${success} или укажи другой --success`);
+    } else if (probe.kind === 'broken') {
+      console.error(
+        `uat-login: ${success} ответил ${probe.status} — вход тут ни при чём, проверь путь --success и состояние стенда (cookie ${cookies})`
+      );
     } else {
-      const detail = probe.status === 'не понадобился'
-        ? `адрес под ${success}, но cookie не записано`
-        : `запрос ${success} без cookie входа — ${probe.status}, cookie ${cookies}`;
+      const detail = probe.kind === 'guest'
+        ? `запрос ${success} ведёт в область входа (${probe.status}), cookie ${cookies}`
+        : `адрес под ${success}, но подтверждения нет, cookie ${cookies}`;
       console.error(`uat-login: вход не прошёл — страница ${landed.pathname} («${title}»), ${detail}`);
-      console.error('uat-login: проверь значения в .env, срок действия кода, селекторы формы и доступность стенда');
+      console.error('uat-login: проверь значения в .env, срок действия кода и селекторы формы');
     }
     process.exitCode = 1;
   } else {

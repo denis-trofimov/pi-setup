@@ -48,7 +48,9 @@ const LANDING = {
   landed: 'http://localhost/admin/schedule/update?id=24568',
   'probe-guest': 'http://localhost/',
   'probe-forbidden': 'http://localhost/',
+  'probe-broken': 'http://localhost/',
   'probe-error': 'http://localhost/',
+  'no-cookies': 'http://localhost/',
 };
 
 module.exports = {
@@ -74,13 +76,16 @@ module.exports = {
       const context = {
         newPage: async () => page,
         storageState: async () => ({
-          cookies: [{ name: 'PHPSESSID' }, { name: 'csrf' }, { name: 'hint' }],
+          cookies: scenario === 'no-cookies'
+            ? []
+            : [{ name: 'PHPSESSID' }, { name: 'csrf' }, { name: 'hint' }],
         }),
         request: {
           async get(url, options) {
             record({ get: url, options });
             if (scenario === 'probe-error') throw new Error('net::ERR_TUNNEL_CONNECTION_FAILED');
             if (scenario === 'probe-forbidden') return { status: () => 403, headers: () => ({}) };
+            if (scenario === 'probe-broken') return { status: () => 404, headers: () => ({}) };
             if (scenario === 'probe-guest') {
               return { status: () => 302, headers: () => ({ location: 'http://localhost/admin/login/index' }) };
             }
@@ -133,7 +138,27 @@ run probe-guest
 [[ "$RC" == "1" ]] || fail "гость: отказ не назван (код $RC): $OUT"
 [[ -e "$STATE" ]] && fail "гость: файл состояния записан без сессии: $OUT"
 grep -q 'вход не прошёл' <<<"$OUT" || fail "гость: отказ не назван словами: $OUT"
-grep -q '— 302' <<<"$OUT" || fail "гость: ответ проверки не назван: $OUT"
+grep -q '302' <<<"$OUT" || fail "гость: ответ проверки не назван: $OUT"
+
+# --- login area as --success: the page answers 200 to a guest, so it must not confirm a login --
+run farm UAT_LOGIN_SUCCESS='/admin/login/index'
+[[ "$RC" == "1" ]] || fail "--success в области входа: гость назван вошедшим (код $RC): $OUT"
+[[ -e "$STATE" ]] && fail "--success в области входа: файл состояния записан: $OUT"
+grep -q '"get"' "$CALLS" && fail "--success в области входа: запрос к странице входа всё-таки сделан: $(cat "$CALLS")"
+
+# --- probe-broken: the path or the stand is wrong, the login is not ------------------------
+run probe-broken
+[[ "$RC" == "1" ]] || fail "404: отказ не назван (код $RC): $OUT"
+[[ -e "$STATE" ]] && fail "404: файл состояния записан: $OUT"
+grep -q 'ответил 404' <<<"$OUT" || fail "404: ответ стенда не назван: $OUT"
+grep -q 'вход не прошёл' <<<"$OUT" && fail "404: ошибка пути названа отказом входа: $OUT"
+
+# --- no-cookies: no session, so no probe at all --------------------------------------------
+run no-cookies
+[[ "$RC" == "1" ]] || fail "нет cookie: отказ не назван (код $RC): $OUT"
+[[ -e "$STATE" ]] && fail "нет cookie: файл состояния записан: $OUT"
+grep -q 'проверка запросом не выполнялась' <<<"$OUT" || fail "нет cookie: выдуман невыполненный запрос: $OUT"
+grep -q '"get"' "$CALLS" && fail "нет cookie: запрос сделан без сессии: $(cat "$CALLS")"
 
 # --- probe-forbidden: session exists, this user has no access to --success ------------------
 run probe-forbidden
