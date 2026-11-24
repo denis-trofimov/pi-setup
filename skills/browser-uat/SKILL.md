@@ -54,6 +54,17 @@ outside `skills/` on purpose: a restore wipes `skills/` and a sync copies that
 tree into the repo checkout. The values travel through the environment, never
 argv — argv is visible in `ps`.
 
+How the login is judged: `--success` (default `/admin`) is a path only an
+authenticated session sees, but the redirect after the submit is **not** required to
+land there. The farm answers a signed-in user who opens `/admin` with a redirect to
+`/`, and judging by the URL alone printed «вход не прошёл — страница /, ожидался путь
+/admin» about a live session with three cookies (#16027 п.2). So when the browser does
+not land under `--success`, the script asks the app itself: a request to `--success`
+with the cookies just obtained must be answered outside the login area — a guest is
+redirected to `/login` there, an authenticated session is not, whatever the stand's
+redirect target is. The state file is written only after that check passes, so the
+false negative is what leaves the MCP browser as a guest while the session was fine.
+
 After that the MCP server picks the state up on its next start: the Xvfb wrapper
 exports `PLAYWRIGHT_MCP_STORAGE_STATE` when the file exists, and `--isolated`
 still keeps the profile in memory. So the server has to be (re)started once

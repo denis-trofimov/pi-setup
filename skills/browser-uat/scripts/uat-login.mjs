@@ -21,7 +21,10 @@
 //   UAT_LOGIN_SEND_SELECTOR   button that requests the code (optional; the form
 //                             may render the code field only after it is clicked)
 //   UAT_LOGIN_SUBMIT_SELECTOR submit button, default button[type=submit]
-//   UAT_LOGIN_SUCCESS         URL fragment that means "logged in", default /admin
+//   UAT_LOGIN_SUCCESS         path only an authenticated session sees, default /admin.
+//                             The login passes if the browser landed under it, or if a
+//                             request to it with the new cookies is answered — a stand may
+//                             send a logged-in session to "/" instead (#16027 п.2)
 //   UAT_LOGIN_TIMEOUT         step timeout in ms, default 20000
 //   UAT_LOGIN_PROXY_SERVER    proxy for the login browser (optional)
 //   UAT_LOGIN_PROXY_BYPASS    proxy bypass list, comma-separated (optional)
@@ -67,6 +70,29 @@ const noProxy = env.UAT_LOGIN_NO_PROXY === '1';
 function loggedIn(current) {
   const path = current.pathname;
   return path.startsWith(success) && !path.includes('/login');
+}
+
+// The landed URL alone says "login failed" about a working session: the farm answers a signed-in
+// user from /admin with a redirect to "/", not to /admin (#16027 п.2 — three cookies written and
+// "вход не прошёл — страница /, ожидался путь /admin"). So when the URL does not land under
+// --success, the app itself is asked: a request to --success with the cookies just obtained should
+// be answered outside the login area. A guest is redirected to /login there, an authenticated
+// session is not, whatever the stand's redirect target is.
+async function probeSuccess(context) {
+  try {
+    const probeUrl = new URL(success, url).toString();
+    const response = await context.request.get(probeUrl, {
+      maxRedirects: 0,
+      failOnStatusCode: false,
+      timeout: Math.max(timeout, 15000),
+    });
+    const status = response.status();
+    const location = response.headers().location || '';
+    if (status < 200 || status >= 400) return { ok: false, status };
+    return { ok: !/\/login/.test(location), status };
+  } catch (error) {
+    return { ok: false, status: 'ошибка запроса: ' + String(error).split('\n')[0] };
+  }
 }
 const timeout = Number(env.UAT_LOGIN_TIMEOUT || 20000);
 
@@ -160,11 +186,19 @@ try {
   const state = await context.storageState();
   const cookies = state.cookies?.length ?? 0;
   const landed = new URL(page.url());
+  // Fast path — the browser landed on an authenticated page. Otherwise the probe decides: it is
+  // the stand, not the URL, that says whether the session is alive.
+  const probe = landedUnderSuccess
+    ? { ok: true, status: 'не понадобился' }
+    : cookies > 0
+      ? await probeSuccess(context)
+      : { ok: false, status: 'нет cookie' };
+  const confirmed = landedUnderSuccess || probe.ok;
 
-  if (!landedUnderSuccess || cookies === 0) {
+  if (!confirmed || cookies === 0) {
     const title = await page.title().catch(() => '');
     console.error(
-      `uat-login: вход не прошёл — страница ${landed.pathname} («${title}»), ожидался путь ${success} вне /login, cookie ${cookies}`
+      `uat-login: вход не прошёл — страница ${landed.pathname} («${title}»), запрос ${success} без cookie входа — ${probe.status}, cookie ${cookies}`
     );
     console.error('uat-login: проверь значения в .env, срок действия кода, селекторы формы и доступность стенда');
     process.exitCode = 1;
@@ -181,6 +215,9 @@ try {
     chmodSync(tmp, 0o600);
     renameSync(tmp, stateFile);
 
+    if (!landedUnderSuccess) {
+      console.log(`uat-login: адрес после входа — ${landed.pathname}, вход подтверждён запросом ${success}`);
+    }
     console.log(`uat-login: готово — вход выполнен, ${cookies} cookie сохранено в ${stateFile}`);
     console.log('uat-login: перезапусти MCP-сервер (/reload в pi), чтобы он подхватил состояние входа');
   }
