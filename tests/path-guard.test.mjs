@@ -10,6 +10,8 @@
 // в домашнем каталоге, и нашёлся он двадцать вызовов спустя.
 
 import assert from "node:assert/strict";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 
 import { checkPath, toToolCallResult } from "../extensions/path-guard-core.mjs";
@@ -17,11 +19,11 @@ import { checkPath, toToolCallResult } from "../extensions/path-guard-core.mjs";
 const CWD = "/home/denis/work/msl/msb-lk";
 const ROOTS = ["/home/denis/work/msl/msb-lk", "/home/denis", "/tmp"];
 
-// Корни те же, что у живой сессии. Обход правила 7 включён в помощнике: кейсы ниже проверяют другие
-// правила, а часть их путей лежит в `~/p/pi-setup` (списки ru-spellcheck). Само правило 7 проверяется
-// отдельно и вызывает `checkPath` без обхода.
+// Корни те же, что у живой сессии. Обход правила 7 в помощнике не включён: иначе любой новый кейс на
+// пути в `~/p/pi-setup` молча пропускал бы правило. Кейсы, которым нужен такой путь (списки
+// ru-spellcheck), зовут `checkPath` сами и называют обход явно.
 function check(path, cwd = CWD) {
-	return checkPath(path, cwd, { roots: ROOTS, allowPiSetupMain: true });
+	return checkPath(path, cwd, { roots: ROOTS });
 }
 
 test("путь с `2>/dev/null` блокируется — живой замер #15723 п.5", () => {
@@ -228,9 +230,13 @@ test("списки запрещённых слов ru-spellcheck не редак
 
 test("обычные файлы рядом с deny-списком не задеты", () => {
 	// allow-список пополняется агентом по замыслу (--add), поэтому запрет только на deny.
+	// Пути внутри общего чекаута pi-setup проверяются с обходом правила 7: кейс про deny-список,
+	// а не про то, где живёт файл (сам обход правила 7 проверяется ниже, без флага).
+	const inPiSetup = (path) =>
+		checkPath(path, CWD, { roots: ROOTS, allowPiSetupMain: true });
 	assert.equal(check("/home/denis/.config/ru-spellcheck/allow.txt").allowed, true);
-	assert.equal(check("/home/denis/p/pi-setup/.ru-spellcheck-allow").allowed, true);
-	assert.equal(check("/home/denis/p/pi-setup/config/ru-spellcheck/deny.md").allowed, true);
+	assert.equal(inPiSetup("/home/denis/p/pi-setup/.ru-spellcheck-allow").allowed, true);
+	assert.equal(inPiSetup("/home/denis/p/pi-setup/config/ru-spellcheck/deny.md").allowed, true);
 });
 
 test("осознанный обход запрета deny-списка проходит", () => {
@@ -279,6 +285,47 @@ test("правило 7 не задевает чужие каталоги и со
 	// Соседний каталог с тем же префиксом — не общий чекаут: сравнение идёт по границе каталога.
 	assert.equal(checkPiSetup("/home/denis/p/pi-setup-other/skills/pr/SKILL.md").allowed, true);
 	assert.equal(checkPiSetup("/home/denis/p/msl/msb-lk/AGENTS.md").allowed, true);
+});
+
+test("боевой корень правила 7 — литеральный ~/p/pi-setup, а не выведенный из cwd", () => {
+	// Расширение ключ `piSetupRoot` не передаёт: в живом стороже работает только fallback на
+	// `homedir()`. Кейс проверяет его самого, а не подменённый корень теста.
+	const home = homedir();
+	const verdict = checkPath(join(home, "p", "pi-setup", "x.md"), home, {
+		roots: [home],
+	});
+	assert.equal(verdict.allowed, false, `папка живого корня пропускается: ${verdict.reason}`);
+	assert.match(verdict.reason, /общем чекауте/);
+});
+
+test("deny-список выигрывает у правила 7 — порядок правил закреплён", () => {
+	// Более точный отказ («правьте текст, а не список») не должен теряться за откатом
+	// «возьмите воркдерево»: deny-список лежит внутри общего чекаута pi-setup.
+	const verdict = checkPiSetup("/home/denis/p/pi-setup/config/ru-spellcheck/deny.txt");
+	assert.equal(verdict.allowed, false);
+	assert.match(verdict.reason, /список запрещённых слов/, `причина не та: ${verdict.reason}`);
+});
+
+test("сессия в воркдереве pi-setup получает оба отказа и оба обхода — #16046 п.4", () => {
+	const worktree = "/home/denis/p/pi-setup-wt/16046-retro";
+	const path = "/home/denis/p/pi-setup/skills/pr/SKILL.md";
+	const env = { roots: ROOTS, piSetupRoot: PI_SETUP_ROOT };
+
+	// Каждый отказ называет недостающий обход: иначе второй отказ читается как «обход не работает».
+	const rule5 = checkPath(path, worktree, env);
+	assert.equal(rule5.allowed, false);
+	assert.match(rule5.reason, /PI_PATH_GUARD_ALLOW_MAIN_TREE=1/);
+	assert.match(rule5.reason, /PI_PATH_GUARD_ALLOW_PI_SETUP_MAIN=1/, `второй обход не назван: ${rule5.reason}`);
+
+	const rule7 = checkPath(path, worktree, { ...env, allowMainTree: true });
+	assert.equal(rule7.allowed, false);
+	assert.match(rule7.reason, /PI_PATH_GUARD_ALLOW_PI_SETUP_MAIN=1/);
+	assert.match(rule7.reason, /PI_PATH_GUARD_ALLOW_MAIN_TREE=1/, `второй обход не назван: ${rule7.reason}`);
+
+	assert.equal(
+		checkPath(path, worktree, { ...env, allowMainTree: true, allowPiSetupMain: true }).allowed,
+		true,
+	);
 });
 
 test("ответ Pi для заблокированного вызова называет причину", () => {

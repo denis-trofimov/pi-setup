@@ -34,6 +34,11 @@
 // Осознанные обходы — переменные окружения PI_PATH_GUARD_ALLOW_TWIN, PI_PATH_GUARD_ALLOW_MAIN_TREE и
 // PI_PATH_GUARD_ALLOW_PI_SETUP_MAIN.
 //
+// Границы правила 7 названы честно: путь сравнивается с литеральным `<home>/p/pi-setup` (вывести его
+// из `cwd` нельзя), и симлинк-алиас корня правило не видит — `realpath` не делается, как и в правиле 5.
+// Машина с другим расположением чекаута получает правило, которое молчит; тогда его корень задаётся
+// при вызове (`piSetupRoot`), как это делают тесты.
+//
 // Границы правил 4 и 5 названы честно:
 // - проверка 4 сознательно узкая — только смена алфавита (кириллица ↔ латиница). Регистр (`P` рядом с
 //   `p`) двойником не считается: на Linux это законно разные каталоги, и блокировать его — ложное
@@ -215,7 +220,10 @@ function isUnder(path, root) {
  *
  * @param {string} path аргумент `path` как его прислала модель
  * @param {string} cwd текущий рабочий каталог сессии
- * @param {{ home?: string, tmp?: string }} [env] подмена корней для тестов
+ * @param {{ roots?: string[], piSetupRoot?: string, allowTwin?: boolean, allowMainTree?: boolean,
+ *           allowDenyList?: boolean, allowPiSetupMain?: boolean, exists?: Function,
+ *           readdir?: Function }} [env] подмена корней и осознанные обходы (так правило проверяется
+ *           тестом без записи файлов)
  * @returns {{ allowed: boolean, reason?: string, absolutePath?: string }}
  */
 export function checkPath(path, cwd, env = {}) {
@@ -268,6 +276,12 @@ export function checkPath(path, cwd, env = {}) {
 	if (!env.allowMainTree) {
 		const mainTree = mainTreeViolation(absolutePath, cwd);
 		if (mainTree) {
+			// У общего чекаута pi-setup два правила сразу: сессия из воркдерева pi-setup, метящая в
+			// основной чекаут, получает отказ и от правила 5, и от правила 7. Назвать один обход
+			// значило бы послать агента за вторым отказом; проверено ревью #16046.
+			const alsoRule7 = piSetupMainViolation(absolutePath, env)
+				? " У общего чекаута pi-setup свой обход — PI_PATH_GUARD_ALLOW_PI_SETUP_MAIN=1: нужны оба."
+				: "";
 			return {
 				allowed: false,
 				absolutePath,
@@ -275,7 +289,7 @@ export function checkPath(path, cwd, env = {}) {
 					`путь ${absolutePath} — в основном дереве ${mainTree.repoRoot}, а сессия работает в воркдереве ${mainTree.worktree}. ` +
 					"Правка уедет не в дерево задачи, а в основной чекаут, где её никто не закоммитит " +
 					"(хук root-files-clean ловит такое только на коммите). Возьмите путь дерева задачи. " +
-					"Осознанный обход — PI_PATH_GUARD_ALLOW_MAIN_TREE=1",
+					`Осознанный обход — PI_PATH_GUARD_ALLOW_MAIN_TREE=1.${alsoRule7}`,
 			};
 		}
 	}
@@ -316,6 +330,11 @@ export function checkPath(path, cwd, env = {}) {
 	if (!env.allowPiSetupMain) {
 		const piSetup = piSetupMainViolation(absolutePath, env);
 		if (piSetup) {
+			// Симметрично правилу 5: сессия в воркдереве pi-setup получает два отказа, и назвать
+			// надо оба обхода — иначе второй отказ читается как «обход не работает».
+			const alsoRule5 = mainTreeViolation(absolutePath, cwd)
+				? " Сессия в воркдереве pi-setup: нужен ещё PI_PATH_GUARD_ALLOW_MAIN_TREE=1."
+				: "";
 			return {
 				allowed: false,
 				absolutePath,
@@ -323,7 +342,7 @@ export function checkPath(path, cwd, env = {}) {
 					`путь ${absolutePath} — в общем чекауте ${piSetup.root}, а он держит main для install.sh и sync.sh. ` +
 					`Правка pi-setup идёт в воркдереве ${piSetup.worktreeRoot}/<задача> и PR: коммит в общий чекаут ` +
 					"уезжает в main мимо ревью. Возьмите путь воркдерева; осознанный обход — " +
-					"PI_PATH_GUARD_ALLOW_PI_SETUP_MAIN=1",
+					`PI_PATH_GUARD_ALLOW_PI_SETUP_MAIN=1.${alsoRule5}`,
 			};
 		}
 	}
