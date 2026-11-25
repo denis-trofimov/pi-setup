@@ -178,12 +178,10 @@ function mainTreeViolation(absolutePath, cwd) {
  */
 function piSetupMainViolation(absolutePath, env) {
 	const root = env.piSetupRoot ?? join(homedir(), "p", "pi-setup");
+	// Воркдеревья лежат рядом: `<корень>-wt/<задача>`, отдельным каталогом — `isUnder` по корню их
+	// не захватывает, отдельная проверка не нужна. Раскладка названа в тексте отказа.
 	if (!isUnder(absolutePath, root)) return null;
-	// Воркдеревья лежат рядом: `<корень>-wt/<задача>`. Префикс `-wt` отдельным каталогом,
-	// поэтому `isUnder` по корню их уже не захватывает — проверка оставлена ради читаемости.
-	const worktreeRoot = `${root}-wt`;
-	if (isUnder(absolutePath, worktreeRoot)) return null;
-	return { root, worktreeRoot };
+	return { root, worktreeRoot: `${root}-wt` };
 }
 
 /**
@@ -279,7 +277,9 @@ export function checkPath(path, cwd, env = {}) {
 			// У общего чекаута pi-setup два правила сразу: сессия из воркдерева pi-setup, метящая в
 			// основной чекаут, получает отказ и от правила 5, и от правила 7. Назвать один обход
 			// значило бы послать агента за вторым отказом; проверено ревью #16046.
-			const alsoRule7 = piSetupMainViolation(absolutePath, env)
+			// Подсказка про второй обход сверяется с уже выставленным флагом: фразу «нужны оба» при
+			// включённом ALLOW_PI_SETUP_MAIN читали бы как «обход не работает» (ревью #16046 раунд 2).
+			const alsoRule7 = !env.allowPiSetupMain && piSetupMainViolation(absolutePath, env)
 				? " У общего чекаута pi-setup свой обход — PI_PATH_GUARD_ALLOW_PI_SETUP_MAIN=1: нужны оба."
 				: "";
 			return {
@@ -324,17 +324,16 @@ export function checkPath(path, cwd, env = {}) {
 		}
 	}
 
-	// Правило 7 — последним: оно самое широкое из всех (целый каталог), и более точные отказы —
-	// deny-список ru-spellcheck и каталог-двойник внутри того же чекаута — должны выигрывать у
-	// отката «возьмите воркдерево», иначе из сообщения пропадает настоящая причина.
+	// Правило 7 — последним: оно самое широкое из всех (целый каталог), и более точный отказ —
+	// deny-список ru-spellcheck внутри того же чекаута — должен выигрывать у отката «возьмите
+	// воркдерево», иначе из сообщения пропадает настоящая причина. Правило 5 стоит выше и этим не
+	// ограничено: его отказ выигрывает и у deny-списка, и у двойника.
 	if (!env.allowPiSetupMain) {
 		const piSetup = piSetupMainViolation(absolutePath, env);
 		if (piSetup) {
-			// Симметрично правилу 5: сессия в воркдереве pi-setup получает два отказа, и назвать
-			// надо оба обхода — иначе второй отказ читается как «обход не работает».
-			const alsoRule5 = mainTreeViolation(absolutePath, cwd)
-				? " Сессия в воркдереве pi-setup: нужен ещё PI_PATH_GUARD_ALLOW_MAIN_TREE=1."
-				: "";
+			// Подсказки про правило 5 здесь нет и быть не может: правило 5 исполняется раньше и
+			// пропускает сюда только при включённом ALLOW_MAIN_TREE — значит второй обход уже
+			// выставлен (ревью #16046 раунд 2).
 			return {
 				allowed: false,
 				absolutePath,
@@ -342,7 +341,7 @@ export function checkPath(path, cwd, env = {}) {
 					`путь ${absolutePath} — в общем чекауте ${piSetup.root}, а он держит main для install.sh и sync.sh. ` +
 					`Правка pi-setup идёт в воркдереве ${piSetup.worktreeRoot}/<задача> и PR: коммит в общий чекаут ` +
 					"уезжает в main мимо ревью. Возьмите путь воркдерева; осознанный обход — " +
-					`PI_PATH_GUARD_ALLOW_PI_SETUP_MAIN=1.${alsoRule5}`,
+					"PI_PATH_GUARD_ALLOW_PI_SETUP_MAIN=1",
 			};
 		}
 	}

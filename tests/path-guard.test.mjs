@@ -306,26 +306,40 @@ test("deny-список выигрывает у правила 7 — поряд�
 	assert.match(verdict.reason, /список запрещённых слов/, `причина не та: ${verdict.reason}`);
 });
 
-test("сессия в воркдереве pi-setup получает оба отказа и оба обхода — #16046 п.4", () => {
+test("сессия в воркдереве pi-setup: первый отказ называет оба обхода — #16046 п.4", () => {
 	const worktree = "/home/denis/p/pi-setup-wt/16046-retro";
 	const path = "/home/denis/p/pi-setup/skills/pr/SKILL.md";
 	const env = { roots: ROOTS, piSetupRoot: PI_SETUP_ROOT };
 
-	// Каждый отказ называет недостающий обход: иначе второй отказ читается как «обход не работает».
+	// Правило 5 срабатывает первым и обязано назвать оба обхода: следующий названному агент
+	// получает второй отказ и читает это как «обход не работает».
 	const rule5 = checkPath(path, worktree, env);
 	assert.equal(rule5.allowed, false);
 	assert.match(rule5.reason, /PI_PATH_GUARD_ALLOW_MAIN_TREE=1/);
 	assert.match(rule5.reason, /PI_PATH_GUARD_ALLOW_PI_SETUP_MAIN=1/, `второй обход не назван: ${rule5.reason}`);
 
+	// Второй отказ (уже с ALLOW_MAIN_TREE) называет только свой обход: правило 5 в этот момент
+	// пропускает, и фраза «нужен ещё ALLOW_MAIN_TREE» была бы ложной.
 	const rule7 = checkPath(path, worktree, { ...env, allowMainTree: true });
 	assert.equal(rule7.allowed, false);
 	assert.match(rule7.reason, /PI_PATH_GUARD_ALLOW_PI_SETUP_MAIN=1/);
-	assert.match(rule7.reason, /PI_PATH_GUARD_ALLOW_MAIN_TREE=1/, `второй обход не назван: ${rule7.reason}`);
+	assert.doesNotMatch(rule7.reason, /нужен ещё PI_PATH_GUARD_ALLOW_MAIN_TREE/);
 
 	assert.equal(
 		checkPath(path, worktree, { ...env, allowMainTree: true, allowPiSetupMain: true }).allowed,
 		true,
 	);
+});
+
+test("подсказка про второй обход не повторяет уже выставленный флаг", () => {
+	const worktree = "/home/denis/p/pi-setup-wt/16046-retro";
+	const path = "/home/denis/p/pi-setup/skills/pr/SKILL.md";
+	const env = { roots: ROOTS, piSetupRoot: PI_SETUP_ROOT, allowPiSetupMain: true };
+
+	const rule5 = checkPath(path, worktree, env);
+	assert.equal(rule5.allowed, false);
+	assert.match(rule5.reason, /PI_PATH_GUARD_ALLOW_MAIN_TREE=1/);
+	assert.doesNotMatch(rule5.reason, /нужны оба/, `флаг уже выставлен, а подсказка врёт: ${rule5.reason}`);
 });
 
 test("ответ Pi для заблокированного вызова называет причину", () => {
