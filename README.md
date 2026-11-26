@@ -556,8 +556,8 @@ proves the allow list against the provider. Background and the evidence:
 picks the review angles — on a documentation-only cut two reviewers instead of three, no `bash` for
 them, the data comes from the parent's task, and a second round is one targeted reviewer. It hangs
 off that anchor verbatim, so an upstream rewording fails the run instead of inserting the paragraph
-in the wrong place; `tests/pi-subagents-review-loop-docs-cut.sh` pins all four states (unpatched
-check, dry run, apply plus idempotency, missing anchor).
+in the wrong place; `tests/pi-subagents-review-loop-docs-cut.sh` pins all five states (unpatched
+check, dry run, apply plus idempotency, missing anchor, package absent).
 
 ```bash
 ./patches/pi-subagents-review-loop-docs-cut.sh --check     # exit 1 if the patch is missing
