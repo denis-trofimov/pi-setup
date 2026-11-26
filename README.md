@@ -547,20 +547,40 @@ The enforcement layer behind both is `subagents.modelScope` in `settings.json`, 
 proves the allow list against the provider. Background and the evidence:
 [docs/pstack-on-pi.md](docs/pstack-on-pi.md#model-slugs-and-why-a-fan-out-dies-outside-the-cap).
 
-### `pi-subagents`: the local prompt patches are gone
+### `pi-subagents`: one local prompt patch, for the docs-cut review form
 
 `pi-subagents` 0.89.2 rewrote `prompts/review-loop.md` (down to 47 lines) and
 `skills/pi-subagents/SKILL.md`, so the five patches that added rules to those files were removed on
-2026-11-23. Two of their rules are now upstream text and need nothing here: an async child returns
+2026-11-23. One rule came back on 2026-11-26, because it started costing rounds again:
+`patches/pi-subagents-review-loop-docs-cut.sh` inserts the docs-cut form after the paragraph that
+picks the review angles — on a documentation-only cut two reviewers instead of three, no `bash` for
+them, the data comes from the parent's task, and a second round is one targeted reviewer. It hangs
+off that anchor verbatim, so an upstream rewording fails the run instead of inserting the paragraph
+in the wrong place; `tests/pi-subagents-review-loop-docs-cut.sh` pins all four states (unpatched
+check, dry run, apply plus idempotency, missing anchor).
+
+```bash
+./patches/pi-subagents-review-loop-docs-cut.sh --check     # exit 1 if the patch is missing
+./patches/pi-subagents-review-loop-docs-cut.sh             # apply (install.sh does it too)
+bash tests/pi-subagents-review-loop-docs-cut.sh            # fixture-based, no package needed
+```
+
+What the patch says, the repository canon says in full: `msb-lk` → `.claude/commands/review-inline.md`,
+section «Форма ревью по типу среза»; the cut itself is named by
+`scripts/ci/handoff-cut-type.sh` in that repo (#16153).
+
+Two of the dropped rules are now upstream text and need nothing here: an async child returns
 control and wakes the parent, so the parent must not sleep, poll, or call `bg_wait` for ordinary
 children; and a per-child `output:` is bound through `runs.all`, because a `workflow: "parallel"`
 item accepts `agent`, `task`, `cwd` and `model` only.
 
-Three rules died with that rewrite and are not carried: a failed review round must not discard the
-`output:` reports of the children that finished, the artifact is taken against `origin/<base>` and
-not the local base branch, and a reviewer stays in the directory it was given instead of walking into
-a sibling worktree. Each cost a P1 when it was first written up (#15836 п.1, #15733 п.2,
-#15674 п.3). Re-derive a patch from a fixture when one of them starts costing a round again — the old
+Three more rules died with that rewrite and are still not carried: a failed review round must not
+discard the `output:` reports of the children that finished, the artifact is taken against
+`origin/<base>` and not the local base branch, and a reviewer stays in the directory it was given
+instead of walking into a sibling worktree. Each cost a P1 when it was first written up (#15836 п.1,
+#15733 п.2, #15674 п.3) — and the base-branch one is worth re-deriving next: `msb-lk`
+`.pi/skills/implement-plan/SKILL.md` §7 still claims the patch that carries it is applied on this
+machine, which the removal above made false. Re-derive a patch from a fixture when one of them starts costing a round again — the old
 scripts are in the history before this change, and `patches/pi-pstack-models.sh` is the shape to
 copy.
 
