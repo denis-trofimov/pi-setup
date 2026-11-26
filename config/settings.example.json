@@ -27,9 +27,7 @@
   "extensionChangelogVersions": {
     "{\"source\":\"npm:pi-mcp-adapter\",\"scope\":\"user\"}": "7.0.1",
     "{\"source\":\"npm:@narumitw/pi-goal\",\"scope\":\"user\"}": "0.55.4",
-    "{\"source\":\"npm:@dustydonkey/pi-spinner\",\"scope\":\"user\"}": "1.0.2",
     "{\"source\":\"npm:pi-subagents\",\"scope\":\"user\"}": "0.89.2",
-    "{\"source\":\"npm:@senad-d/micme\",\"scope\":\"user\"}": "0.3.8",
     "{\"source\":\"npm:pi-pstack-adapter\",\"scope\":\"user\"}": "0.12.0"
   },
   "extensions": [
@@ -117,19 +115,5 @@
       }
     }
   },
-  "showCacheMissNotices": true,
-  "observational-memory": {
-    "models": {
-      "observer": {
-        "provider": "openrouter",
-        "id": "deepseek/deepseek-v4.1-flash-1017",
-        "thinking": "low"
-      },
-      "consolidator": {
-        "provider": "openrouter",
-        "id": "deepseek/deepseek-v4.1-flash-1017",
-        "thinking": "off"
-      }
-    }
-  }
+  "showCacheMissNotices": true
 }
