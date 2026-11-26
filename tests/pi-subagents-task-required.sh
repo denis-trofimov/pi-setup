@@ -34,23 +34,36 @@ OLD_GUARD='        if (params.task !== undefined && typeof params.task !== "stri
                 output: params.output === undefined ? true : params.output,
             },
         };'
+# Упакованная копия — собранный код: то же условие записано через `void 0`
+# и с двумя пробелами отступа. Первая версия правки этого не учла и молча
+# пропускала bundle — поведение проверялось только на рабочем файле пакета.
+BUNDLE_GUARD='    if (params.task !== void 0 && typeof params.task !== "string") {
+      return { ok: false, error: "Structured single-child task must be a string when provided.", mode: "workflow" };
+    }
+    return {'
+BUNDLE_SHAPE='return { ok: false, error: "Execution requires either { agent, task? } for one child or workflow (true, a script path, or a named workflow resource) for orchestration.", mode: "workflow" };'
+
 OLD_SHAPE='return { ok: false, error: "Execution requires either { agent, task? } for one child or workflow (true, a script path, or a named workflow resource) for orchestration.", mode: "workflow" };'
 
 # Пакет-фикстура: рабочий файл и «упакованная» копия с тем же кодом.
 make_fixture() {
-  local home="$1" body="$2"
+  local home="$1" body="$2" bundle_body="$3"
   mkdir -p "$home/npm/node_modules/pi-subagents/src/extension" "$home/npm/node_modules/pi-subagents/bundle"
   printf '%s\n' "$body" > "$home/npm/node_modules/pi-subagents/src/extension/public-execution.js"
-  printf '%s\n' "$body" > "$home/npm/node_modules/pi-subagents/bundle/chunk-FIXTURE.js"
+  printf '%s\n' "$bundle_body" > "$home/npm/node_modules/pi-subagents/bundle/chunk-FIXTURE.js"
 }
 
 fixture_body() {
   printf '%s\n%s\n' "$OLD_GUARD" "$OLD_SHAPE"
 }
 
+bundle_fixture_body() {
+  printf '%s\n%s\n' "$BUNDLE_GUARD" "$BUNDLE_SHAPE"
+}
+
 # --- (1) и (2): фикстура с настоящим якорем -----------------------------------
 home="$WORK/home"
-make_fixture "$home" "$(fixture_body)"
+make_fixture "$home" "$(fixture_body)" "$(bundle_fixture_body)"
 
 set +e
 PI_CODING_AGENT_DIR="$home" "$PATCH" --check >/dev/null 2>&1
@@ -73,6 +86,34 @@ grep -q 'task? }' "$home/npm/node_modules/pi-subagents/src/extension/public-exec
 
 PI_CODING_AGENT_DIR="$home" "$PATCH" --check >/dev/null 2>&1 \
   || fail "--check после правки должен отдавать код 0"
+
+# --- (2б): отступы и `void 0` у упакованной копии ------------------------------
+# Проверка должна встать с отступом самого файла, а не с зашитыми восемью пробелами.
+grep -q '^    if (typeof params.task !== "string" || !params.task.trim()) {$' \
+  "$home/npm/node_modules/pi-subagents/bundle/chunk-FIXTURE.js" \
+  || fail "в упакованной копии проверка встала с чужим отступом"
+grep -q '^      return { ok: false, error: "Structured single-child execution requires task' \
+  "$home/npm/node_modules/pi-subagents/bundle/chunk-FIXTURE.js" \
+  || fail "в упакованной копии return встал с чужим отступом"
+
+# --- (2в): bundle отстал, рабочий файл уже исправлен ---------------------------
+# Ровно это и случилось на живой машине: первая версия правки трогала только
+# рабочий файл, а `--check` молчал. Теперь такое состояние — код 1 с именем файла.
+drift="$WORK/drift"
+make_fixture "$drift" "$(fixture_body)" "$(fixture_body)"
+PI_CODING_AGENT_DIR="$drift" "$PATCH" >/dev/null 2>&1 || fail "правка на фикстуре дрейфа не встала"
+cp "$home/npm/node_modules/pi-subagents/bundle/chunk-FIXTURE.js" "$drift/npm/node_modules/pi-subagents/bundle/chunk-FIXTURE.js"
+printf '%s\n' "$(fixture_body)" > "$drift/npm/node_modules/pi-subagents/bundle/chunk-FIXTURE.js"
+set +e
+PI_CODING_AGENT_DIR="$drift" "$PATCH" --check > "$WORK/drift.log" 2>&1
+rv=$?
+set -e
+[[ "$rv" == 1 ]] || fail "отставшая упакованная копия не поймана: --check отдал $rv"
+grep -q 'chunk-FIXTURE.js is NOT patched' "$WORK/drift.log" \
+  || fail "в отказе не назван отставший файл: $(cat "$WORK/drift.log")"
+PI_CODING_AGENT_DIR="$drift" "$PATCH" >/dev/null 2>&1 || fail "догоняющая правка упала"
+PI_CODING_AGENT_DIR="$drift" "$PATCH" --check >/dev/null 2>&1 \
+  || fail "после догоняющей правки --check должен отдавать код 0"
 
 # --- (3): повторный прогон ничего не меняет -----------------------------------
 before="$(cksum "$home/npm/node_modules/pi-subagents/src/extension/public-execution.js")"
