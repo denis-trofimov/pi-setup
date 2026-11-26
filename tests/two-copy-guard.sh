@@ -7,7 +7,8 @@
 # Проверяется: (1) restore отказывает, когда у живой копии есть свои правки, и называет файл;
 # (2) --force перезаписывает; (3) restore идёт, когда живая копия просто устарела (равна HEAD);
 # (4) sync --dry-run печатает реальное расхождение с числом строк, а не множество путей;
-# (5) sync отказывает, когда копия репозитория грязная; (6) PI_SETUP_TWO_COPY_GUARD=0 снимает гейт.
+# (5) sync отказывает, когда копия репозитория грязная; (6) sync отказывает, когда живая копия
+# отстала на коммит, и не откатывает репозиторий; (7) PI_SETUP_TWO_COPY_GUARD=0 снимает гейт.
 #
 # Работает на временном HOME: живая копия этой машины не трогается.
 # Exit 0 — всё сошлось; 1 — проверка упала.
@@ -116,7 +117,39 @@ if env HOME="$home" PI_HOME="$pi_home" XDG_CONFIG_HOME="$home/.config" \
 fi
 grep -q "two-copy guard" "$err" || fail "sync-отказ не назвал сторож: $(cat "$err")"
 
-# (6) Гейт снимается осознанно.
+# (6) Живая копия — версия, которую репозиторий уже пережил: sync отказывает, а не откатывает файл.
+# Зеркало шага (3): там такое состояние для restore безопасно (терять в живой копии нечего), для sync
+# оно означает откат готового файла — 26.11.2026 так стоял skills/pr/SKILL.md (#16157).
+git -C "$clone" checkout -q -- skills config
+head_blob="$(git -C "$clone" rev-parse HEAD:skills/redmine-cli/SKILL.md)"
+prev=""
+for sha in $(git -C "$clone" log -n 20 --format=%H -- skills/redmine-cli/SKILL.md); do
+  if [[ "$(git -C "$clone" rev-parse "${sha}:skills/redmine-cli/SKILL.md")" != "$head_blob" ]]; then
+    prev="$sha"
+    break
+  fi
+done
+[[ -n "$prev" ]] || fail "в клоне не нашлось прежней версии skills/redmine-cli/SKILL.md"
+git -C "$clone" show "${prev}:skills/redmine-cli/SKILL.md" > "$pi_home/skills/redmine-cli/SKILL.md"
+head_before="$(git -C "$clone" rev-parse HEAD)"
+file_before="$(git -C "$clone" rev-parse HEAD:skills/redmine-cli/SKILL.md)"
+err="$WORK/sync6-stale.err"
+if env HOME="$home" PI_HOME="$pi_home" XDG_CONFIG_HOME="$home/.config" \
+  bash "$clone/sync.sh" --no-push --all-skills 2>"$err" >/dev/null; then
+  fail "sync откатил копию репозитория на версию, которую репозиторий уже пережил"
+fi
+grep -q "two-copy guard" "$err" || fail "отказ по устаревшей живой копии не назвал сторож: $(cat "$err")"
+grep -q "${prev:0:8}" "$err" || fail "отказ не назвал версию, до которой откатилась бы живая копия: $(cat "$err")"
+grep -q "репозиторий с тех пор ушёл вперёд" "$err" || fail "отказ не отличил устаревшую живую копию от грязной копии репозитория: $(cat "$err")"
+[[ "$(git -C "$clone" rev-parse HEAD)" == "$head_before" ]] || fail "после отказа в клоне появился коммит"
+[[ "$(git -C "$clone" rev-parse HEAD:skills/redmine-cli/SKILL.md)" == "$file_before" ]] \
+  || fail "после отказа файл в копии репозитория изменился"
+# --force — осознанный отказ от проверки: та же запись проходит.
+env HOME="$home" PI_HOME="$pi_home" XDG_CONFIG_HOME="$home/.config" \
+  bash "$clone/sync.sh" --no-push --all-skills --force >"$WORK/sync6-force.out" 2>&1 \
+  || fail "--force не снял отказ по устаревшей живой копии: $(cat "$WORK/sync6-force.out")"
+
+# (7) Гейт снимается осознанно.
 env HOME="$home" PI_HOME="$pi_home" XDG_CONFIG_HOME="$home/.config" \
   PI_SETUP_TWO_COPY_GUARD=0 bash "$clone/sync.sh" --no-push --all-skills >"$WORK/sync6.out" 2>&1 \
   || fail "PI_SETUP_TWO_COPY_GUARD=0 не снял гейт: $(cat "$WORK/sync6.out")"
