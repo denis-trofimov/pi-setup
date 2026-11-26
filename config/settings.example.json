@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "1.5.0",
+  "lastChangelogVersion": "1.6.0",
   "theme": "catppuccin-mocha",
   "compaction": {
     "enabled": true
@@ -7,32 +7,11 @@
   "packages": [
     "npm:@juicesharp/rpiv-ask-user-question",
     "npm:@juicesharp/rpiv-todo",
-    "npm:pi-markdown-preview",
     "npm:pi-mcp-adapter",
-    {
-      "source": "npm:context-mode",
-      "extensions": [
-        "-build/adapters/pi/extension.js"
-      ],
-      "skills": [
-        "-skills/context-mode/SKILL.md",
-        "-skills/ctx-doctor/SKILL.md",
-        "-skills/ctx-index/SKILL.md",
-        "-skills/ctx-insight/SKILL.md",
-        "-skills/ctx-purge/SKILL.md",
-        "-skills/ctx-search/SKILL.md",
-        "-skills/ctx-stats/SKILL.md",
-        "-skills/ctx-upgrade/SKILL.md"
-      ]
-    },
     "npm:@narumitw/pi-goal",
     "npm:@juicesharp/rpiv-advisor",
-    "npm:@dustydonkey/pi-spinner",
-    "npm:@juicesharp/rpiv-btw",
     "npm:@ff-labs/pi-fff",
     "npm:pi-subagents",
-    "https://github.com/amosblomqvist/pi-observational-memory",
-    "npm:@senad-d/micme",
     "npm:pi-pstack-adapter"
   ],
   "defaultProvider": "openrouter",
@@ -47,11 +26,9 @@
   "defaultProjectTrust": "always",
   "extensionChangelogVersions": {
     "{\"source\":\"npm:pi-mcp-adapter\",\"scope\":\"user\"}": "7.0.1",
-    "{\"source\":\"npm:@narumitw/pi-goal\",\"scope\":\"user\"}": "0.54.15",
-    "{\"source\":\"npm:@dustydonkey/pi-spinner\",\"scope\":\"user\"}": "1.0.2",
-    "{\"source\":\"npm:pi-subagents\",\"scope\":\"user\"}": "0.87.0",
-    "{\"source\":\"npm:@senad-d/micme\",\"scope\":\"user\"}": "0.3.8",
-    "{\"source\":\"npm:pi-pstack-adapter\",\"scope\":\"user\"}": "0.10.0"
+    "{\"source\":\"npm:@narumitw/pi-goal\",\"scope\":\"user\"}": "0.55.4",
+    "{\"source\":\"npm:pi-subagents\",\"scope\":\"user\"}": "0.89.2",
+    "{\"source\":\"npm:pi-pstack-adapter\",\"scope\":\"user\"}": "0.12.0"
   },
   "extensions": [
     "-builtin:mcp",
@@ -138,19 +115,5 @@
       }
     }
   },
-  "showCacheMissNotices": true,
-  "observational-memory": {
-    "models": {
-      "observer": {
-        "provider": "openrouter",
-        "id": "deepseek/deepseek-v4.1-flash-1017",
-        "thinking": "low"
-      },
-      "consolidator": {
-        "provider": "openrouter",
-        "id": "deepseek/deepseek-v4.1-flash-1017",
-        "thinking": "off"
-      }
-    }
-  }
+  "showCacheMissNotices": true
 }
