@@ -44,6 +44,17 @@ files = "^config/ru-spellcheck/deny\\.txt$"
 pass_filenames = true
 
 [[repos.hooks]]
+id = "deny-words-in-steering"
+name = "канон: слова из deny-списка ru-spellcheck (#16159)"
+language = "system"
+# Список — тот же файл, что читает ru-spellcheck (`config/ru-spellcheck/deny.txt`); второго перечня нет.
+# Хук смотрит прозу канона, а блоки кода маскирует: там запрещённые слова стоят примерами.
+entry = "python3 scripts/prek/deny-words-in-steering.py"
+# Пути не передаются: канон маленький (около 40 файлов), а `--root` нужен только тестам.
+files = "^(config/AGENTS\\.md|skills/.*\\.md)$"
+pass_filenames = false
+
+[[repos.hooks]]
 id = "skill-tool-refs"
 name = "скиллы: никакого «Skill tool», только чтение SKILL.md"
 language = "system"
