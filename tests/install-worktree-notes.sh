@@ -20,12 +20,23 @@ trap 'rm -rf "$WORK"' EXIT
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
 clone="$WORK/clone"
-git clone -q --no-hardlinks "$ROOT" "$clone"
+# init.defaultBranch через переменные, а не `git config --global`: клон из чекаута с detached HEAD
+# не находит одноимённую ветку у источника и печатает git init-подсказку про 'master'.
+GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=init.defaultBranch GIT_CONFIG_VALUE_0=main \
+  git clone -q --no-hardlinks "$ROOT" "$clone"
 git -C "$clone" config user.email "worktree-notes@example.invalid"
 git -C "$clone" config user.name "worktree notes test"
+# Локальная ветка: чекаут PR в CI приходит с detached HEAD, и ветки, которую можно пушить, там нет.
+git -C "$clone" checkout -q -B main
 
-# База сравнения — сам клон: origin/main указывает сюда, поэтому «смержено» проверяется локально.
-git -C "$clone" update-ref refs/remotes/origin/main "$(git -C "$clone" rev-parse HEAD)"
+# База сравнения — настоящий upstream, а не поддельный refs/remotes/origin/main: `--restore` перед
+# раскладкой делает `git fetch --prune` (restore_report_source в install.sh) и синтетический ref бы
+# перезаписал. Раньше тест писал ref через update-ref и держался только на detached HEAD: там
+# `@{upstream}` пуст, fetch пропускается, и тест проходил или падал от того, как выставлен HEAD,
+# а не от разметки воркдеревьев. Bare-репозиторий рядом делает fetch настоящим.
+git init -q --bare -b main "$WORK/upstream.git"
+git -C "$clone" remote set-url origin "$WORK/upstream.git"
+git -C "$clone" push -q -u origin main
 
 # (1) fast-forward
 git -C "$clone" worktree add -q "$WORK/wt-ff" -b feat/ff
@@ -49,7 +60,8 @@ git -C "$clone" worktree add -q "$WORK/wt-new" -b feat/new
 printf 'd\n' > "$WORK/wt-new/d.txt"
 git -C "$WORK/wt-new" add -A && git -C "$WORK/wt-new" commit -qm new
 
-git -C "$clone" update-ref refs/remotes/origin/main "$(git -C "$clone" rev-parse HEAD)"
+# Те же коммиты — в upstream: fetch из restore принесёт именно это состояние, как на машине.
+git -C "$clone" push -q origin main
 
 home="$WORK/home"
 mkdir -p "$home/.pi/agent" "$home/.local/bin"
@@ -59,6 +71,12 @@ env HOME="$home" PI_HOME="$home/.pi/agent" BIN_DIR="$home/.local/bin" XDG_CONFIG
   sed -n '1,40p' "$out" >&2
   fail "restore завершился ошибкой"
 }
+
+# Проверяется именно путь с настоящим fetch: без него сравнение шло бы по устаревшему
+# origin/main, то есть тест молча проверял бы не ту ветку кода.
+if grep -q "git fetch не прошёл" "$out"; then
+  fail "restore не смог сделать fetch — тест проверяет не тот путь"
+fi
 
 grep -q "wt-ff.*можно убрать" "$out" \
   || fail "воркдерево с fast-forward мержем не названо"
