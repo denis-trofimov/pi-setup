@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # tests/pi-subagents-review-loop-wait.sh — патч `prompts/review-loop.md` из `patches/`.
 #
-# Проверяет пять состояний: на непропатченной фикстуре `--check` выходит с кодом 1, `--dry-run` ничего
+# Проверяет шесть состояний: на непропатченной фикстуре `--check` выходит с кодом 1, `--dry-run` ничего
 # не пишет, применённый патч ставит абзац ПОСЛЕ абзаца запуска раунда и `--check` после него зелёный,
 # повторный запуск ничего не дублирует. Пятое состояние — выдуманный upstream: якоря нет, патч обязан
 # отказать с кодом 1, а не вставить абзац в случайное место. Шестое — пакета нет: код 0 и объяснение,
 # потому что `install.sh` гоняет патчи и на машине без pi-subagents. Настоящий пакет не нужен: его роль
-# играет фикстура под PI_CODING_AGENT_DIR.
+# играет фикстура под PI_CODING_AGENT_DIR. Шестое — на машине с установленным пакетом сверяется,
+# что абзац-якорь в `prompts/review-loop.md` всё ещё дословный: иначе патч молча перестанет применяться.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -16,7 +17,9 @@ failures=0
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
-# Фикстура: фрагмент настоящего prompt вокруг абзаца запуска раунда.
+# Фикстура синтетическая: дословен только абзац-якорь (его сверяет и тест, и патч), остальное вокруг —
+# пересказ, чтобы не тащить в тест весь upstream. Дрейф настоящего промпта ловит шаг 6: при
+# установленном пакете якорь сверяется с `prompts/review-loop.md` файлом.
 make_fixture() { # $1 — каталог PI_HOME, $2 — текст абзаца-якоря
   mkdir -p "$1/npm/node_modules/pi-subagents/prompts"
   cat >"$1/npm/node_modules/pi-subagents/prompts/review-loop.md" <<EOF
@@ -128,6 +131,19 @@ if ! grep -q 'nothing to patch' "$tmp/out"; then
   echo 'FAIL пакета нет — пропуск: нет объяснения' >&2
   cat "$tmp/out" >&2
   failures=$((failures + 1))
+fi
+
+# 6. Установленный пакет: якорь в нём всё ещё дословный, иначе патч молча перестанет применяться.
+installed="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/npm/node_modules/pi-subagents/prompts/review-loop.md"
+if [[ -f "$installed" ]]; then
+  if grep -qF "$ANCHOR" "$installed"; then
+    echo 'ok   якорь установленного prompt'
+  else
+    echo 'FAIL якорь установленного prompt: абзац переписан upstream — перевыведите якорь из промпта' >&2
+    failures=$((failures + 1))
+  fi
+else
+  echo 'pi-subagents: пакет не установлен на этой машине — якорь установленного prompt не проверялся (шаг 6 пропущен)'
 fi
 
 if [[ "$failures" -gt 0 ]]; then

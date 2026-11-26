@@ -547,7 +547,7 @@ The enforcement layer behind both is `subagents.modelScope` in `settings.json`, 
 proves the allow list against the provider. Background and the evidence:
 [docs/pstack-on-pi.md](docs/pstack-on-pi.md#model-slugs-and-why-a-fan-out-dies-outside-the-cap).
 
-### `pi-subagents`: one local prompt patch, for the docs-cut review form
+### `pi-subagents`: two local prompt patches, for the cut form and for waiting
 
 `pi-subagents` 0.89.2 rewrote `prompts/review-loop.md` (down to 47 lines) and
 `skills/pi-subagents/SKILL.md`, so the five patches that added rules to those files were removed on
