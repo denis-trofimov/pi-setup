@@ -100,3 +100,59 @@ jobs:
             exit 1
           fi
           echo "Коммитов сверх ${base}: $(git rev-list --count "$base"..HEAD)"
+
+  # Секреты — вторым job-ом, а не шагом в `checks`: ему нужен свой checkout с полной историей
+  # и ничего из hunspell/node, что ставит `checks`.
+  #
+  # CLI, а не gitleaks-action: action требует GITLEAKS_LICENSE, а конфиг читается из
+  # `.gitleaks.toml` — там правила на ключи, которых базовый набор не видит.
+  # Сканируется диапазон коммитов PR/push, а не вся история: старая история не должна краснеть
+  # от ключа, который утёк и уже отозван.
+  secrets:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        env:
+          # Держать в синхроне с prek.toml → repos.rev (без ведущего "v").
+          GITLEAKS_VERSION: "8.30.1"
+        run: |
+          curl -fsSL \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin gitleaks
+          gitleaks version
+
+      - name: Scan for secrets
+        # github.event.* — через env, не подстановкой в тело скрипта.
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          PUSH_AFTER_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          ZERO_SHA='0000000000000000000000000000000000000000'
+          common=(git . --verbose --redact --config .gitleaks.toml)
+
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            if [ -z "${PR_BASE_SHA}" ] || [ -z "${PR_HEAD_SHA}" ]; then
+              echo "::error::PR base/head SHA missing — cannot scope PR scan."
+              exit 1
+            fi
+            echo "Scanning PR commit range ${PR_BASE_SHA}..${PR_HEAD_SHA}"
+            gitleaks "${common[@]}" --log-opts="${PR_BASE_SHA}..${PR_HEAD_SHA}"
+          elif [ "$EVENT_NAME" = "push" ] \
+            && [ -n "${PUSH_BEFORE_SHA:-}" ] \
+            && [ "$PUSH_BEFORE_SHA" != "$ZERO_SHA" ]; then
+            echo "Scanning push commit range ${PUSH_BEFORE_SHA}..${PUSH_AFTER_SHA}"
+            gitleaks "${common[@]}" --log-opts="${PUSH_BEFORE_SHA}..${PUSH_AFTER_SHA}"
+          else
+            # workflow_dispatch или push, создающий ветку: проверяется верхний коммит.
+            # Флаг `git` (а не `dir`) держит скан внутри истории репозитория.
+            echo "Scanning tip commit only (event=${EVENT_NAME})"
+            gitleaks "${common[@]}" --log-opts="-1"
+          fi
