@@ -89,7 +89,13 @@ git -C "$other" init -q
 printf 'другоеслово\n' > "$other/.ru-spellcheck-allow"
 
 printf 'Крокозябра в тексте.\n' > "$WORK/msg.txt"
-(cd "$other" && "$TOOL" - < "$WORK/msg.txt" >/dev/null 2>&1) && fail "из чужого каталога слово обязано помечаться"
+rc=0
+out="$(cd "$other" && "$TOOL" - < "$WORK/msg.txt" 2>&1)" || rc=$?
+# Диагностика в сообщении, а не голое «обязано помечаться»: причина отказа бывает в словаре и в
+# том, какой файл словаря нашёлся, и без вывода проверки это гадание.
+if [[ $rc -eq 0 ]]; then
+    fail "из чужого каталога слово обязано помечаться; вывод: ${out:-<пусто>}; git root: $(cd "$other" && git rev-parse --show-toplevel 2>&1); словарь: $(ls "$other"/.ru-spellcheck-allow 2>&1)"
+fi
 (cd "$repo" && "$TOOL" - < "$WORK/msg.txt" >/dev/null) || fail "из каталога своего репозитория stdin обязан проходить"
 
 echo "OK: проект .ru-spellcheck-allow читается поверх личного, --add пишет в него, stdin берёт словарь от cwd"
