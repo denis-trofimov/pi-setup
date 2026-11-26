@@ -361,6 +361,44 @@ test("имя инструмента pi в bash отказано с вызово�
 	}
 });
 
+// Ожидание прогона паузой (#16149 п.1): `sleep` дольше 30 с блокируется с подсказкой про `wait`.
+// Повод — замер ретро #16105: `sleep 120` и `sleep 420` вместо одного `wait --timeout`; правило
+// про `wait` пришло в `AGENTS.md` в середине той же сессии и в снимок контекста не попало.
+test("sleep дольше 30 секунд блокируется и называет run-detached.sh wait", () => {
+	for (const command of [
+		"sleep 400",
+		"sleep 31",
+		"sleep 5m",
+		"sleep 2h",
+		"sleep 400 | tee /tmp/log",
+		"sleep 400; make lint-ci",
+		"cd /repo && sleep 120",
+	]) {
+		const verdict = classifyCall(command);
+		assert.equal(verdict.allowed, false, command);
+		assert.match(verdict.reason, /дольше 30 секунд/, command);
+		assert.match(verdict.hint, /run-detached\.sh/, command);
+		assert.match(verdict.hint, /wait <id>/, command);
+	}
+});
+
+test("короткая пауза и упоминание sleep в тексте проходят", () => {
+	for (const command of [
+		"sleep 5",
+		"sleep 30",
+		"sleep 0.5",
+		"sleep 30s",
+		"rg -n 'sleep 400' docs/",
+		'echo "sleep 400"',
+	]) {
+		assert.equal(classifyCall(command).allowed, true, command);
+	}
+});
+
+test("осознанный обход снимает блокировку sleep", () => {
+	assert.equal(classifyCall("sleep 600", { allow: true }).allowed, true);
+});
+
 test("настоящие команды bash именем тула не задеваются", () => {
 	for (const command of [
 		"while read -r line; do echo \"$line\"; done < file.txt",

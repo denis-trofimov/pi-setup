@@ -111,6 +111,22 @@ const EXIT_STATUS_READ = /\$(?:\?|\{\?\})/;
 const PIPEFAIL_SEGMENT = /^set\s[^|;]*\bpipefail\b/;
 
 /**
+ * Ожидание прогона паузой: `sleep 400`, `sleep 5m`, `sleep 0.5`, `sleep 1h`.
+ *
+ * Порог — 30 секунд (#16149 п.1): короткая пауза законна (порт поднимается, файл появляется), а
+ * `sleep 400` — это ожидание долгого прогона, у которого есть `run-detached.sh wait`. Разбор идёт по
+ * сегменту, а не по строке: `rg -n 'sleep 400' docs` — поиск текста, а не вызов, и якорь `^` его
+ * отсекает.
+ */
+const SLEEP_SEGMENT = /^sleep\s+(\d+(?:[.,]\d+)?)\s*([smhd]?)(?=\s|$)/;
+
+/** Секунды во единицах суффикса `sleep`: `5`, `5s`, `5m`, `5h`, `5d`. */
+const SLEEP_UNIT_SECONDS = { "": 1, s: 1, m: 60, h: 3600, d: 86400 };
+
+/** `sleep` длиннее этого — ожидание прогона, а не пауза (#16149). */
+const SLEEP_MAX_SECONDS = 30;
+
+/**
  * Слова сегмента: кавычки снимаются, перенаправления остаются отдельными словами.
  *
  * @param {string} segment
@@ -340,6 +356,32 @@ function readingVerdict(segment) {
 }
 
 /**
+ * Вердикт по `sleep`: длинная пауза вместо ожидания прогона (#16149 п.1).
+ *
+ * Правило живёт в стороже, а не только в прозе `AGENTS.md`, потому что проза меняет поведение не всегда:
+ * правило про `wait` появилось в 11:03, а сессия #16105 стартовала в 10:41 — в снимке контекста его не
+ * было, и ожидание снова ушло двумя `sleep` на 9 минут. Сторож работает независимо от того, какую
+ * версию `AGENTS.md` загрузила сессия.
+ *
+ * @param {string} segment сегмент без обёрток, первая ступень конвейера
+ * @returns {{ allowed: boolean, reason?: string, hint?: string } | null}
+ */
+function sleepVerdict(segment) {
+	const match = SLEEP_SEGMENT.exec(segment);
+	if (match === null) return null;
+	const value = Number(match[1].replace(",", "."));
+	if (!Number.isFinite(value)) return null;
+	const seconds = value * (SLEEP_UNIT_SECONDS[match[2]] ?? 1);
+	if (seconds <= SLEEP_MAX_SECONDS) return null;
+
+	return {
+		allowed: false,
+		reason: `Ожидание \`sleep\` на ${match[0].slice("sleep ".length)} — дольше 30 секунд: так ждут долгий прогон, а у него есть \`wait\`.`,
+		hint: "Цель дольше ~5 минут запускается обёрткой (`bash scripts/ci/run-detached.sh start -- <команда>`), а ждётся одним вызовом `wait <id> [--timeout N]`: он выходит, как только прогон закончился, и печатает итог. `sleep` промахивается в обе стороны: прогон готов на 400-й секунде, а спят 540 (#16009, 3 ч 48 мин из 7 ч 47 мин в #15815). Пауза до 30 с проходит; осознанно — PI_CALL_GUARD_ALLOW=1.",
+	};
+}
+
+/**
  * Обёртки перед командой: `sudo`, `command`, `env -u X`, `GIT_PAGER=cat`, `time`, их флаги и
  * присваивания переменных. Снимаются, чтобы правило видело сам вызов: `sudo git branch -a`
  * блокировался и до сужения правил к сегменту. Якорь `^` нужен ровно для того, что НЕ является
@@ -514,6 +556,10 @@ export function classifyCall(command, options = {}) {
 
 		const reading = readingVerdict(unwrapped(firstPipelineStage(raw)));
 		if (reading !== null) return reading;
+
+		// `sleep` проверяется до пропуска конвейера: `sleep 400 | tee log` — то же ожидание паузой.
+		const sleeping = sleepVerdict(unwrapped(firstPipelineStage(raw)).trim());
+		if (sleeping !== null) return sleeping;
 
 		if (/\|/.test(raw)) continue;
 		const segment = unwrapped(raw);
