@@ -49,6 +49,7 @@ if ! command -v python3 >/dev/null 2>&1; then
 fi
 
 python3 - "$PKG_DIR" "$DRY_RUN" "$CHECK_ONLY" <<'PY'
+import re
 import sys
 from pathlib import Path
 
@@ -56,27 +57,35 @@ pkg = Path(sys.argv[1])
 dry_run = sys.argv[2] == "1"
 check_only = sys.argv[3] == "1"
 
-# The check sits right after the "task must be a string" guard in the one-child
-# branch; keeping the anchor small makes the patch survive unrelated upstream
-# edits around it.
-OLD_TASK_GUARD = '''        if (params.task !== undefined && typeof params.task !== "string") {
-            return { ok: false, error: "Structured single-child task must be a string when provided.", mode: "workflow" };
-        }
-'''
-NEW_TASK_GUARD = '''        if (params.task !== undefined && typeof params.task !== "string") {
-            return { ok: false, error: "Structured single-child task must be a string when provided.", mode: "workflow" };
-        }
-        if (typeof params.task !== "string" || !params.task.trim()) {
-            return { ok: false, error: "Structured single-child execution requires task to be a non-empty string: call subagent({ agent, task }).", mode: "workflow" };
-        }
-'''
+# The one-child branch always carries this sentence; a file that has it is the file
+# to patch, and a file without it is left alone. Anchoring on the sentence instead
+# of on the whole block is what keeps the bundle in scope: it is generated code and
+# spells the same guard differently (`void 0`, four spaces of indent, `=== void 0`
+# comparisons), which is how the first version of this patch silently skipped it.
+BRANCH_MARKER = '"Structured single-child task must be a string when provided."'
+
+# The guard we insert, right after the "task must be a string" check. Indentation is
+# taken from the file: the source uses eight spaces, the bundle four.
+TASK_GUARD_ANCHOR = re.compile(
+    r"(?P<indent>[ \t]*)if \(params\.task !== (?:undefined|void 0) && typeof params\.task !== \"string\"\) \{\n"
+    r"(?P<inner_indent>[ \t]*)return [^\n]*\n"
+    r"(?P=indent)\}\n"
+)
+
+# The inserted block reuses the file's own indentation (four spaces in the source,
+# two in the bundle), so the result looks native and a formatter has nothing to undo.
+NEW_GUARD = (
+    '{indent}if (typeof params.task !== "string" || !params.task.trim()) {{\n'
+    '{inner_indent}return {{ ok: false, error: "Structured single-child execution requires task to be a non-empty string: call subagent({{ agent, task }}).", mode: "workflow" }};\n'
+    "{indent}}}\n"
+)
+
+GUARD_MARKER = "requires task to be a non-empty string"
 
 # The shape advertised when nothing was passed: `{ agent, task? }` reads as "task
 # optional", which is exactly how an agent-only call happens.
 OLD_SHAPE = "Execution requires either { agent, task? } for one child or workflow"
 NEW_SHAPE = "Execution requires either { agent, task } for one child or workflow"
-
-MARKER = "requires task to be a non-empty string"
 
 # The runtime file plus its bundled copy (the bundle carries the same function;
 # which one loads depends on the entry point).
@@ -90,11 +99,11 @@ for path in candidates:
     if not path.is_file():
         continue
     text = path.read_text()
-    has_marker = MARKER in text
-    has_anchor = OLD_TASK_GUARD in text or OLD_SHAPE in text
-    if not has_marker and not has_anchor:
+    if BRANCH_MARKER not in text:
         continue
-    if has_marker:
+    needs_guard = GUARD_MARKER not in text
+    needs_shape = OLD_SHAPE in text
+    if not needs_guard and not needs_shape:
         print(f"pi-subagents: {path.name} already patched")
         patched_any = True
         continue
@@ -107,11 +116,22 @@ for path in candidates:
         changed = True
         continue
     updated = text
-    if OLD_TASK_GUARD in updated:
-        updated = updated.replace(OLD_TASK_GUARD, NEW_TASK_GUARD, 1)
-    if OLD_SHAPE in updated:
+    if needs_guard:
+        match = TASK_GUARD_ANCHOR.search(updated)
+        if match is None:
+            missing.append(path.name)
+            continue
+        insert_at = match.end()
+        updated = (
+            updated[:insert_at]
+            + NEW_GUARD.format(indent=match.group("indent"), inner_indent=match.group("inner_indent"))
+            + updated[insert_at:]
+        )
+    if needs_shape:
         updated = updated.replace(OLD_SHAPE, NEW_SHAPE, 1)
-    if updated == text:
+    # Proof after the edit: both halves must be in place, otherwise the file is left
+    # as it was and the run fails instead of reporting success.
+    if GUARD_MARKER not in updated or OLD_SHAPE in updated:
         missing.append(path.name)
         continue
     path.write_text(updated)
@@ -121,7 +141,7 @@ for path in candidates:
 
 if missing:
     print(
-        "pi-subagents: found the task guard in "
+        "pi-subagents: found the one-child validation in "
         + ", ".join(missing)
         + " but could not rewrite it. The upstream release changed; re-derive patches/pi-subagents-task-required.sh.",
         file=sys.stderr,
