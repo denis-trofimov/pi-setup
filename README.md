@@ -558,6 +558,25 @@ a sibling worktree. Each cost a P1 when it was first written up (#15836 п.1, #1
 scripts are in the history before this change, and `patches/pi-pstack-models.sh` is the shape to
 copy.
 
+### `pi-subagents`: a one-child launch needs a task
+
+`subagent({ agent, cwd, output })` — agent without `task` — passed validation and started a child with
+an empty task: the child got nothing to do, the parent had to stop it, and the run cost tokens for no
+result (#16149). `src/extension/public-execution.js` checked only that `agent` was a non-empty string,
+allowed a whitespace-only `task`, and the message next to it advertised the shape `{ agent, task? }`.
+`patches/pi-subagents-task-required.sh` adds the missing check — one child needs a non-empty `task` —
+in the runtime file and in its bundled copy; `install.sh` re-applies it after every
+`pi update --extensions`:
+
+```bash
+./patches/pi-subagents-task-required.sh --check     # exit 1 if the patch is missing
+./patches/pi-subagents-task-required.sh             # apply
+```
+
+The check runs from a fixture in `tests/pi-subagents-task-required.sh`; on a machine with the package
+installed it also calls the validator and proves that `{ agent }`, `{ agent, task: "   " }` are
+rejected and `{ agent, task }` still passes.
+
 ## Voice dictation (Handy + Micme)
 
 `alt+m` toggles dictation inside Pi. Audio is recorded with `ffmpeg`, transcribed by the local [Handy](https://handy.computer) CLI, and appended to the focused editor for review — no cloud STT, no API key.
