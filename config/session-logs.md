@@ -103,6 +103,45 @@ PY
 This is the number a retro quotes ("456 calls, 330 bash") — and the split that shows which tool to
 attack. Add `if 'T14:5' in rec.get('timestamp', '')` style filters to measure one window.
 
+## 4b. What failed, what was refused, what took minutes
+
+Counts say which tool to attack; this says what went wrong and what sat waiting. Tool results are not
+content parts of the assistant message: each is its own record with `message.role == 'toolResult'`, and
+it carries `toolName`, `isError` and `durationMs` (§5 skips them for the same reason).
+
+```bash
+python3 - "$SESSION" 20000 <<'PY'
+import collections, json, sys
+session, slow_ms = sys.argv[1], int(sys.argv[2])
+slow, refusals, spent = [], [], collections.Counter()
+for line in open(session, encoding='utf-8'):
+    rec = json.loads(line)
+    msg = rec.get('message') or {}
+    if msg.get('role') != 'toolResult':
+        continue
+    text = ''.join(p.get('text', '') for p in msg.get('content') or [] if isinstance(p, dict))
+    name, ms = msg.get('toolName'), msg.get('durationMs') or 0
+    spent[name] += ms
+    row = (rec['timestamp'][11:19], name, ms // 1000, text[:120].replace('\n', ' '))
+    if msg.get('isError'):
+        refusals.append(row)
+    if ms >= slow_ms:
+        slow.append(row)
+print('time per tool:', {k: f'{v // 1000}s' for k, v in spent.most_common()})
+print(f'\nrefusals and errors ({len(refusals)}):')
+for stamp, name, sec, text in refusals:
+    print(f'  [{stamp}] {name} {sec}s :: {text}')
+print(f'\nslow calls ({len(slow)}):')
+for stamp, name, sec, text in slow:
+    print(f'  [{stamp}] {name} {sec}s :: {text}')
+PY
+```
+
+`isError` covers what the agent saw as a failure — a blocked `call-guard` call, a non-zero exit, a
+crashed script — so the refusals list is the first thing a retro reads: a refusal that repeats is a
+steering line that is not working, and an environment improvement starts there. `60000` as `$2` shows
+only the waits (gates, test suites, subagents).
+
 ## 5. One time window — what happened between two moments
 
 `$2` and `$3` are `HH:MM` in UTC; tool results are skipped unless `all` is passed as `$4`.
