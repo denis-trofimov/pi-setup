@@ -569,10 +569,27 @@ What the patch says, the repository canon says in full: `msb-lk` → `.claude/co
 section «Форма ревью по типу среза»; the cut itself is named by
 `scripts/ci/handoff-cut-type.sh` in that repo (#16153).
 
-Two of the dropped rules are now upstream text and need nothing here: an async child returns
-control and wakes the parent, so the parent must not sleep, poll, or call `bg_wait` for ordinary
-children; and a per-child `output:` is bound through `runs.all`, because a `workflow: "parallel"`
-item accepts `agent`, `task`, `cwd` and `model` only.
+### `pi-subagents`: waiting is not the controller's work
+
+The async reply already says an async child returns control and wakes the parent, but the
+`/review-loop` prompt never said it, and the parent kept standing in a wait loop anyway: in `msb-lk`
+#15812 the wait for two reviewers cost 17 `sleep` calls and 74 minutes while both reports were
+already written (#15865 п.1). `patches/pi-subagents-review-loop-wait.sh` inserts the rule right after
+the paragraph that launches the round — return control, no `sleep`, no polling `subagent({ action:
+"status" })`, no `bg_wait` for an ordinary async child; one `bg_wait` when a same-turn result is
+genuinely needed; a long local command is waited with the repository's own wrapper. The anchor is
+verbatim and `tests/pi-subagents-review-loop-wait.sh` pins the same five states as the docs-cut
+fixture.
+
+```bash
+./patches/pi-subagents-review-loop-wait.sh --check     # exit 1 if the patch is missing
+./patches/pi-subagents-review-loop-wait.sh             # apply (install.sh does it too)
+bash tests/pi-subagents-review-loop-wait.sh            # fixture-based, no package needed
+```
+
+One of the dropped rules is upstream text and needs nothing here: a per-child `output:` is bound
+through `runs.all`, because a `workflow: "parallel"` item accepts `agent`, `task`, `cwd` and `model`
+only.
 
 Three more rules died with that rewrite and are still not carried: a failed review round must not
 discard the `output:` reports of the children that finished, the artifact is taken against
