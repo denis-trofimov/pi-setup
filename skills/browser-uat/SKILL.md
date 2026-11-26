@@ -99,6 +99,7 @@ and `query` vs `text` (#15611 п.9). Copy these shapes.
 | --- | --- | --- |
 | `browser_click` | `target` (ref from the latest snapshot, or a unique selector) | `element`, `button`, `doubleClick`, `modifiers` |
 | `browser_type` | `target`, `text` | `element`, `submit`, `slowly` |
+| `browser_fill_form` | `fields` — array of `{ name, type, value, target }`; `type` is `textbox`/`checkbox`/`radio`/`combobox`/`slider` | — |
 | `browser_find` | `text` **or** `regex` (never both) | `maxResults`, `filename` |
 | `browser_take_screenshot` | `scale` (`"css"` or `"device"`) | `target`, `element`, `type`, `filename`, `fullPage` |
 | `browser_evaluate` | `function` | `target`, `element`, `filename` |
@@ -115,6 +116,17 @@ There is no `ref`, no `query`, no `selector` field: the element handle is always
 human-readable label used in the permission prompt. When a call is rejected for
 an unknown field, run `describeTool`/`mcp describe` on that tool instead of
 retrying with another guess.
+
+`browser_fill_form` fills a whole form in one call, and its shape is not the one
+you would guess either (#15909 п.5). Each entry of `fields` needs `target` (a ref
+from the latest snapshot or a unique selector — a label string such as
+`textbox "Номер телефона"` is rejected), `name`, `type` and `value`, and `value`
+is **always a string**: a checkbox is `"true"`/`"false"`, not `true`, and a
+combobox takes the option text. Three calls were burned on exactly that in one
+UAT: `ref` for `target`, `value: true`, a label in `target`. A click that submits
+a form can also come back as a 5-second timeout while the request is already in
+flight — that is not a failure: do not click again, check the outcome (database
+row, next page, network request) and re-read the snapshot.
 
 ## Reading values with `browser_evaluate`
 
