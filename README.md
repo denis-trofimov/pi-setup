@@ -361,7 +361,7 @@ tests/ru-spellcheck-probe.sh         # known-bad words caught; correct-but-wrong
 tests/ru-spellcheck-textile-emphasis.sh  # accent on a word edge: clean Textile stays clean, an error inside stays a finding
 tests/prek-deny-list-guard.sh        # commit hook: denylist edit blocked, SKIP and env bypass pass
 tests/prek-gitleaks.sh               # commit hook: a bare provider key is blocked, REDACTED placeholders and SKIP=gitleaks pass
-tests/two-copy-guard.sh              # sync/install refuse to overwrite a copy that has edits of its own
+tests/two-copy-guard.sh              # sync/install refuse to overwrite a copy that has edits of its own, and sync refuses to roll the repo back to a version the live copy still holds
 tests/restore-worktree-symlinks.sh   # ~/.local/bin links point at the main checkout, not at a worktree
 tests/restore-stale-checkout.sh      # --restore names branch@commit, warns about a lagging checkout and a dirty tree
 ```
@@ -371,7 +371,13 @@ the two-copy guard (`scripts/lib/two-copy-guard.sh`): `./sync.sh --dry-run` prin
 file, and both `./sync.sh` and `./install.sh` (`--restore`, `--copy-config`) refuse with a non-zero exit
 when the copy they are about to overwrite carries its own edits. Each run compares only the pairs it
 writes: `--restore` never touches `AGENTS.md` or `~/.tmux.conf`, and `--copy-config` never touches
-`skills/`. `~/.tmux.conf` and the live dotfiles are reported but never refused — that write keeps a
+`skills/`.
+
+The guard also covers the opposite accident, which is what a forgotten `--restore` leaves behind: the
+live copy still holds the file as it was at an earlier commit, while the repo has moved on. `--restore`
+writes over such a stale copy without asking (there is nothing of the machine's own to lose), and
+`sync.sh` refuses, naming the commit the live copy came from — writing that content into the repo would
+delete every commit since. `--force` overwrites either way. `~/.tmux.conf` and the live dotfiles are reported but never refused — that write keeps a
 `.bak` next to it, and the denylist is repo policy, overwritten on purpose. `--force` overwrites
 deliberately; `PI_SETUP_TWO_COPY_GUARD=0` turns the guard off for one run.
 

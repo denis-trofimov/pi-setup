@@ -10,6 +10,10 @@
 # would destroy work that git cannot give back. Everything else is the normal direction of the tool:
 # sync publishes live edits, install restores from the repo.
 #
+# The mirror case is the stale side: content the repo held at an earlier commit, while the repo has
+# moved on. install treats it as safe (a stale live copy is what restore is for); sync must refuse,
+# because writing it into the repo rolls those commits back (#16157).
+#
 # Sourced by `sync.sh` and `install.sh`; both define `ROOT` before sourcing. Overrides:
 #   FORCE=1                   overwrite anyway (`--force`), and say so in the output
 #   PI_SETUP_TWO_COPY_GUARD=0 turn the guard off for one run (scripts and tests that write on purpose)
@@ -40,17 +44,25 @@ dg_compare() {
   # `report` — пара только показывается в отчёте: писать её и так безопасно (install.sh кладёт
   # рядом .bak-копию, как и раньше), но расхождение должно быть видно (#15836 п.2).
   [[ "$target" == "report" ]] && return 0
+  local reason="" stale=""
   if [[ "$target" == "live" ]]; then
     # install: replacing the live copy is safe while its content is a version the repo had at some
     # point — that is what a stale live copy is after the repo moved on. Content the repo never held
     # is a local edit, and overwriting it would lose work.
-    dg_known_in_history "$rel" "$live" && return 0
-  else
-    # sync: replacing the repo copy is safe only while it carries no uncommitted change.
-    git -C "$ROOT" ls-files --error-unmatch -- "$rel" >/dev/null 2>&1 \
-      && git -C "$ROOT" diff --quiet HEAD -- "$rel" 2>/dev/null && return 0
+    dg_known_in_history "$rel" "$live" || reason="edit"
+  elif ! git -C "$ROOT" ls-files --error-unmatch -- "$rel" >/dev/null 2>&1; then
+    reason="untracked"
+  elif ! git -C "$ROOT" diff --quiet HEAD -- "$rel" 2>/dev/null; then
+    reason="dirty"
+  elif stale="$(dg_known_sha "$rel" "$live")" && [[ -n "$stale" ]]; then
+    # sync: копия репозитория чиста — но чистая она и тогда, когда живая копия отстала: контент,
+    # который репозиторий держал на прошлом коммите, sync записал бы в репозиторий и откатил файл.
+    # 26.11.2026 так выглядел `skills/pr/SKILL.md`: живая копия — версия из #52, репозиторий уже в #63
+    # (23 строки), и `./sync.sh` снёс бы их молча (#16157).
+    reason="stale:$stale"
   fi
-  DG_REFUSED+=("$live|$repo")
+  [[ -n "$reason" ]] && DG_REFUSED+=("$live|$repo|$reason")
+  return 0
 }
 
 # dg_matches_head <rel-in-repo> <file>: is this file byte-identical to its committed version?
@@ -65,17 +77,27 @@ dg_matches_head() {
   return 1
 }
 
+# dg_known_sha <rel-in-repo> <file>: sha of the newest commit that held this exact content at this
+# path, empty when the repo never held it. `git log` is newest-first, so the first match is the commit
+# the live copy came from — the one the refusal names. `rev-parse` per candidate instead of the batch
+# `cat-file` check: a diverging pair is a handful of files, and the sha is what the message needs.
+dg_known_sha() {
+  local rel="$1" file="$2" want sha
+  want="$(git -C "$ROOT" hash-object -- "$file" 2>/dev/null)" || return 0
+  [[ -n "$want" ]] || return 0
+  while IFS= read -r sha; do
+    [[ -n "$sha" ]] || continue
+    if [[ "$(git -C "$ROOT" rev-parse --quiet --verify "${sha}:${rel}" 2>/dev/null)" == "$want" ]]; then
+      printf '%s\n' "$sha"
+      return 0
+    fi
+  done < <(git -C "$ROOT" log -n 30 --format=%H -- "$rel" 2>/dev/null)
+  return 0
+}
+
 # dg_known_in_history <rel-in-repo> <file>: did the repo ever hold this exact content at this path?
 dg_known_in_history() {
-  local want hits
-  want="$(git -C "$ROOT" hash-object -- "$2" 2>/dev/null)" || return 1
-  [[ -n "$want" ]] || return 1
-  # `grep -q` стоит ПОСЛЕ конвейера, а не в нём: он выходит на первом совпадении, апстрим получает
-  # SIGPIPE, и под `set -o pipefail` (оба скрипта) конвейер возвращает провал на верном ответе.
-  hits="$(git -C "$ROOT" log -n 30 --format=%H -- "$1" 2>/dev/null \
-    | sed "s|\$|:$1|" \
-    | git -C "$ROOT" cat-file --batch-check='%(objectname)' 2>/dev/null)" || hits=""
-  [[ -n "$hits" ]] && printf '%s\n' "$hits" | grep -qx "$want"
+  [[ -n "$(dg_known_sha "$1" "$2")" ]]
 }
 
 # dg_compare_tree <live_dir> <repo_dir> [target]: the same for every file present on both sides.
@@ -142,9 +164,21 @@ dg_report() {
   [[ -n "${DG_REFUSED[@]+x}" ]] || return 0
   {
     echo "two-copy guard: у цели есть собственные правки — молча перезаписать нельзя:"
+    local reason
     for item in "${DG_REFUSED[@]}"; do
+      live="${item%%|*}"
       repo="${item#*|}"
-      echo "  ${repo#"$ROOT"/}  (живая: ${item%%|*})"
+      reason="${repo#*|}"
+      repo="${repo%%|*}"
+      case "$reason" in
+        stale:*)
+          printf '  %s  (живая копия — версия %s, репозиторий с тех пор ушёл вперёд)\n' \
+            "${repo#"$ROOT"/}" "${reason#stale:}"
+          ;;
+        dirty) printf '  %s  (в копии репозитория незакоммиченная правка)\n' "${repo#"$ROOT"/}" ;;
+        untracked) printf '  %s  (в репозитории файл не отслеживается)\n' "${repo#"$ROOT"/}" ;;
+        *) printf '  %s  (живая: %s)\n' "${repo#"$ROOT"/}" "${live#"$HOME"/}" ;;
+      esac
     done
   } >&2
   if [[ "$mode" == "dry-run" ]]; then
