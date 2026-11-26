@@ -190,6 +190,7 @@ Check `status` on that `api/v1` response before trusting the order. That is what
 Warnings:
 
 - `--restore` replaces the current contents of those live resource directories.
+- `--restore` lays out the checkout's working copy, not the remote: it prints `Раскладка из <branch>@<sha>` first, warns when the checkout lags `@{upstream}` (after a short `git fetch`, five seconds at most), and notes uncommitted edits. A checkout one commit behind `origin/main` used to restore the old version with exit 0 and an «is up to date» line (#16137).
 - `--copy-config` overwrites `~/.pi/agent/settings.json` and `~/.pi/agent/mcp.json`, and merges (does not overwrite) `~/.pi/agent/models.json`.
 - `--copy-config` is also the only step that writes `~/.tmux.conf`; a plain `./install.sh` reports the difference and leaves the
   live file alone. `--revert` restores it, or deletes it again when the backup recorded that it did not exist.
@@ -361,6 +362,7 @@ tests/ru-spellcheck-textile-emphasis.sh  # accent on a word edge: clean Textile 
 tests/prek-deny-list-guard.sh        # commit hook: denylist edit blocked, SKIP and env bypass pass
 tests/two-copy-guard.sh              # sync/install refuse to overwrite a copy that has edits of its own
 tests/restore-worktree-symlinks.sh   # ~/.local/bin links point at the main checkout, not at a worktree
+tests/restore-stale-checkout.sh      # --restore names branch@commit, warns about a lagging checkout and a dirty tree
 ```
 
 Files that live in two copies — `skills/`, `config/AGENTS.md`, the spellcheck dictionaries — go through

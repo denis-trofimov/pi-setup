@@ -605,6 +605,46 @@ check_browser_prereqs() {
   fi
 }
 
+# Что именно раскладывается — называть вслух (#16137). restore читает файлы чекаута, а не origin, и
+# чекаут, стоящий на один коммит позади origin/main, разложил старую версию с кодом 0 и строкой
+# "AGENTS.md is up to date". Поймано было сторонним `git status -sb` и стоило двух лишних вызовов;
+# опаснее то, что шаг «проверить, что выкатилось» при этом выглядит выполненным — следующий прогон
+# проверяет старую копию. Прогон из-за отставания не прерываем: restore нужен и на машине без сети
+# (и в воркдереве, где git может не найти сеть), но молчать об отставании нельзя.
+restore_report_source() {
+  local branch tip upstream behind fetch_note=""
+  branch="$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+  tip="$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || true)"
+  [[ -n "$tip" ]] || return 0
+  echo "Раскладка из ${branch:-?}@$tip"
+  # Шапка несёт коммит, а копируются файлы на диске: при грязном дереве это разные вещи, и молчать
+  # об этом — тот же класс ошибки, что и старый чекаут.
+  if [[ -n "$(git -C "$ROOT" status --porcelain 2>/dev/null || true)" ]]; then
+    echo "note: в чекауте есть незакоммиченные правки — раскладывается рабочая копия, а не коммит $tip"
+  fi
+  # @{upstream} — `origin/main` у отслеживающей ветки; у чекаута без неё проверять нечего.
+  upstream="$(git -C "$ROOT" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || true)"
+  [[ -n "$upstream" ]] || return 0
+  # Сверка — по свежему состоянию. Без fetch `HEAD..@{upstream}` говорит о последнем известном, а
+  # чекаут, отставший и не знающий об этом, — ровно тот случай, ради которого сторож здесь: в той
+  # сессии отставание нашлось только сторонним `git status -sb`. Пять секунд сети — цена одной строки
+  # вывода; нет сети — сверка идёт по известному состоянию, и об этом сказано.
+  # GIT_TERMINAL_PROMPT=0 — чтобы fetch с HTTPS-remote не встал на запросе пароля: restore не место для
+  # диалога, а `timeout` страхует от зависшей сети.
+  if command -v timeout >/dev/null 2>&1; then
+    GIT_TERMINAL_PROMPT=0 timeout 5 git -C "$ROOT" fetch --quiet --prune 2>/dev/null || fetch_note="note: git fetch не прошёл — отставание сверяется по последнему известному состоянию $upstream"
+  else
+    GIT_TERMINAL_PROMPT=0 git -C "$ROOT" fetch --quiet --prune 2>/dev/null || fetch_note="note: git fetch не прошёл — отставание сверяется по последнему известному состоянию $upstream"
+  fi
+  if [[ -n "$fetch_note" ]]; then
+    echo "$fetch_note"
+  fi
+  behind="$(git -C "$ROOT" rev-list --count "HEAD..$upstream" 2>/dev/null || true)"
+  [[ -n "$behind" && "$behind" != "0" ]] || return 0
+  echo "warning: чекаут отстаёт от $upstream на $behind коммит(ов) — раскладывается ${branch:-?}@$tip, а не последняя версия."
+  echo "         Сначала: git -C \"$ROOT\" pull --ff-only, затем повторите ./install.sh --restore"
+}
+
 if [[ -n "$REVERT_DIR" ]]; then
   revert_backup "$REVERT_DIR"
   exit 0
@@ -616,6 +656,7 @@ remove_legacy_package_reference
 
 if [[ "$RESTORE" == "1" ]]; then
   echo "Restoring repo resources into live Pi home: $PI_HOME"
+  restore_report_source
   copy_dir_contents "$ROOT/extensions" "$PI_HOME/extensions"
   copy_dir_contents "$ROOT/themes" "$PI_HOME/themes"
   copy_dir_contents "$ROOT/skills" "$PI_HOME/skills"
