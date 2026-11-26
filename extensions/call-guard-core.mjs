@@ -42,6 +42,11 @@
 //    `$?`/`${?}` в более позднем сегменте. Осознанный выход — `PIPESTATUS` или снятый конвейер.
 //    С `set -o pipefail` в той же команде `$?` верен — такое не блокируется.
 //
+// 5. **Имя инструмента pi, набранное как команда bash** (#16126). В сессии #16110 дважды вернулось
+//    `bash: ffgrep: command not found`: тул набран в командной строке вместо вызова. Отказ называет
+//    вызов тула. В список входят только имена, которых в системе нет (`ffgrep`, `fffind`); `read` —
+//    встроенная команда bash, и `while read -r` — обычный код, поэтому его здесь нет.
+//
 // Осознанный обход — PI_CALL_GUARD_ALLOW=1 (как у остальных сторожей pi-setup).
 //
 // Границы названы честно: разбор команд строковый и не знает экранирования вложенного шелла
@@ -225,6 +230,32 @@ function grepExcerpt(path, pattern) {
 	} catch {
 		return "";
 	}
+}
+
+/**
+ * Имена инструментов pi, которые иногда уходят в `bash` как бинарник (#16126).
+ *
+ * В сессии #16110 дважды пришло `bash: ffgrep: command not found`: имя тула набрано в командной
+ * строке вместо вызова тула. Ошибка дешёвая, но немая — в отказе видно только «command not found»,
+ * и следующий ход агент тратит на ту же цель другим путём. Правило ловит только имена, которых в
+ * системе нет: `read` не входит (это встроенная команда bash, `while read -r` — обычный код).
+ */
+const PI_TOOL_NAMES = new Set(["ffgrep", "fffind"]);
+
+/**
+ * Инструмент pi, набранный как команда bash: `ffgrep --pattern …` вместо вызова тула.
+ *
+ * @param {string} segment уже развёрнутый сегмент (`unwrapped`)
+ * @returns {{ allowed: boolean, reason: string, hint: string } | null}
+ */
+function toolNameVerdict(segment) {
+	const command = words(segment)[0];
+	if (command === undefined || !PI_TOOL_NAMES.has(command)) return null;
+	return {
+		allowed: false,
+		reason: "`" + command + "` — инструмент pi, а не бинарник: в bash такого файла нет (`command not found`).",
+		hint: "Вызовите сам тул: `ffgrep pattern='…' path='…' limit=20` для поиска по содержимому, `fffind` — для поиска по пути. Осознанно — PI_CALL_GUARD_ALLOW=1.",
+	};
 }
 
 /**
@@ -476,6 +507,11 @@ export function classifyCall(command, options = {}) {
 		// именно `| head` был самым естественным обходом правила (замер ревью: 26 вызовов `sed -n`,
 		// ради которых правило написано, проходили ровно так). Правило 2 наоборот требует конвейер
 		// как признак фильтра, поэтому ниже сегменты с `|` по-прежнему пропускаются.
+		// Имя тула вместо бинарника проверяется раньше чтения: `ffgrep` — не команда, и отказ должен
+		// называть вызов тула, а не правило чтения файла.
+		const toolName = toolNameVerdict(unwrapped(firstPipelineStage(raw)));
+		if (toolName !== null) return toolName;
+
 		const reading = readingVerdict(unwrapped(firstPipelineStage(raw)));
 		if (reading !== null) return reading;
 

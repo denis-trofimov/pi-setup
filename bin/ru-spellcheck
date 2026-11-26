@@ -97,6 +97,10 @@ MASK_PATTERNS = [
 
 TOKEN = re.compile(r"[^\s()\[\]{}<>«»„“”\"'`|,;:!?…—–+=→·/\\’@%$#№]+")
 EDGE = "*_~"  # markdown emphasis clinging to a word: **Что, задачи.**
+# Пунктуация, которая в тексте стоит рядом с акцентом: в Textile закрывающая звёздочка ставится ДО
+# точки (`*не воспроизведён*.`), и однократный strip(EDGE) по всему токену её не снимает — слово
+# уходило в словарь как `воспроизведён*` и получало находку на верном тексте (#16126).
+SENTENCE_EDGE = ".,;:!?«»\"'"
 ABBREV = re.compile(r"[А-Яа-яЁё]{1,3}\.(?:[А-Яа-яЁё]{1,3}\.)*[А-Яа-яЁё]{0,3}\.?")
 CYR = re.compile(r"[А-Яа-яЁё]")
 LAT = re.compile(r"[A-Za-z]")
@@ -351,6 +355,20 @@ def segments(tok):
     return [s for s in re.split(r"[-‑–]", tok) if s]
 
 
+def trim_edges(word):
+    """Снять с краёв слова пунктуацию и акцент в любом порядке их следования.
+
+    До устойчивого состояния, потому что в Textile акцент и точка чередуются: в `*слово*.`
+    снимается сначала точка, потом звёздочка, а в `_слово._` — наоборот. Один strip не снимает ничего:
+    множество фиксированное, и акцент остаётся внутри (#16126: `воспроизведён*` на верном тексте).
+    """
+    previous = None
+    while previous != word:
+        previous = word
+        word = word.strip(SENTENCE_EDGE).strip(EDGE)
+    return word
+
+
 def check_text(text, d, allow, path, homoglyph_only, baseline=None, stems=None, deny=None):
     findings = []
     hidden = mask(text)
@@ -358,8 +376,8 @@ def check_text(text, d, allow, path, homoglyph_only, baseline=None, stems=None, 
     for m in re.finditer(r"\n", hidden):
         line_starts.append(m.end())
     for m in TOKEN.finditer(hidden):
-        tok = text[m.start():m.end()].strip(EDGE)
-        segs = segments(tok)
+        tok = trim_edges(text[m.start():m.end()])
+        segs = [s for s in (trim_edges(part) for part in segments(tok)) if s]
         # 1. hard error: one segment mixing scripts, or Latin diacritics in a Cyrillic word
         bad_script = any(SCRIPT_MIX.search(s) and CYR.search(s) for s in segs)
         diacritic = bool(DIACRITIC_LATIN.search(tok)) and bool(CYR.search(tok))
