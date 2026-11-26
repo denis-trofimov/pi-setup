@@ -77,6 +77,7 @@ bash /tmp/redmine-install.sh
 | Изменить поля/добавить note | `issues update <id>` | `--note`, `--private-notes`, `--status`, `--priority`, `--assignee`, `--subject`, `--description`, `--tracker`, `--parent`, `--category`, `--version`, `--start-date`, `--due-date`, `--estimated-hours`, `--done-ratio`, `--custom-field`, `--attach`, `--private` |
 | Закрыть | `issues close <id>` | `--note` |
 | Читать | `issues get <id>` | `--journals`, `--attachments`, `--relations`, `--children`, `--download-attachments <dir>`, `--include journals,children,relations,attachments` |
+| Связь | `issues relations add <id> --to <id> --type relates` | `--to`, `--type` (короткое имя типа, не число), `--delay` (только `precedes`/`follows`), `-o`. Список и удаление — `issues relations list <id> -o json` (id связи — только оттуда) и `issues relations remove <relation-id>` (#16153 п.2) |
 | Дети задачи | `issues list --parent <id> --status "*"` | `--children` у `issues get` отдаёт **только id** — без тем и статусов, и вторым запросом их всё равно берут списком. Один вызов вместо двух (#15735 п.5) |
 | Список статусов | `statuses list` | Без флагов, `-o json` отдаёт `id` и `name`. Запасной путь — `redmine api /issue_statuses.json` + выборка из `.issue_statuses`. `redmine issue-statuses list` — **нет такой команды** (`unknown command`, #15735 п.5) |
 | Список | `issues list` | `--project`, `--status`, `--assignee`, `--author`, `--priority`, `--parent`, `--category`, `--query`, `--query-id`, `--filter key=value`, `--sort`, `--limit 0` |
