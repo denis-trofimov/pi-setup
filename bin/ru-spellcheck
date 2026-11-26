@@ -24,6 +24,10 @@ Allowlists, applied on top of hunspell:
     belongs there, not in the personal file: the file is committed with the code, so every
     agent and the CI see the same vocabulary. Files are searched upwards from the checked
     file (or the cwd for stdin) up to the git root; the personal file still applies.
+    For stdin the cwd decides, so the gate runs from the directory of the repository whose
+    text is being checked — `cd <repo> && ru-spellcheck - < /tmp/msg.txt`. From another
+    directory the words that repository has legitimized are reported again (#16004 п.2).
+    `--added BASE FILE` is unaffected: there the file names the repository.
 
 Denylist — the opposite list, and it wins over both allowlists and over hunspell:
   * personal: $XDG_CONFIG_HOME/ru-spellcheck/deny.txt (seeded and overwritten from the repo);
