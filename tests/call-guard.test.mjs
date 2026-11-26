@@ -1,6 +1,8 @@
 // @file: call-guard.test.mjs
 // @description: Тесты правил call-guard: вызов без цели, `git branch -a`/`git remote show` без фильтра,
-//               отсутствие ложных срабатываний на командах, где `cd` — часть рабочего вызова.
+//               чтение файла через `cat`/`sed -n`/`grep -n`, конвейер в `head`/`tail` с голым `$?`
+//               (#16096 п.1) и отсутствие ложных срабатываний на командах, где `cd` — часть
+//               рабочего вызова.
 // @dependencies: node:test, node:assert, ../extensions/call-guard-core.mjs
 // @created: 2026-11-19
 //
@@ -301,4 +303,45 @@ test("блокировки не про чтение содержимого не 
 test("несколько файлов в cat и grep содержимое не отдают", () => {
 	assert.doesNotMatch(excerptOf(`cat ${smallFile} ${excerptFile}`), /повторный вызов не нужен/);
 	assert.doesNotMatch(excerptOf(`grep -n needle ${smallFile} ${excerptFile}`), /повторный вызов не нужен/);
+});
+
+test("конвейер в head/tail и голый `$?` после него блокируется — замер #16096 п.1", () => {
+	// Двадцать два таких чтения за одну сессию (#16087); одно ушло в трекер: «абсолютный путь к .pi/
+	// работает» было итогом `rg -l … /abs/.pi/ | head -3; echo "exit=$?"`, где 0 пришёл от head.
+	const commands = [
+		"run-detached.sh status x | tail -5; echo \"status_exit=$?\"",
+		"rg -l 'fix-pr-comments' /abs/.pi/ | head -3; echo \"exit=$?\"",
+		"make farm-q Q=\"x\" 2>&1 | tail -20; echo $?",
+		"git commit -m x 2>&1 | tail -3; echo \"exit=${?}\"",
+	];
+	for (const command of commands) {
+		const verdict = classifyCall(command);
+		assert.equal(verdict.allowed, false, command);
+		assert.match(verdict.reason, /код возврата приходит от `tail`/, command);
+		assert.match(verdict.hint, /PIPESTATUS/, command);
+	}
+});
+
+test("код возврата берётся законно: PIPESTATUS, без конвейера, с pipefail", () => {
+	const allowed = [
+		"cmd | tail; echo \"exit=${PIPESTATUS[0]}\"",
+		"cmd > /tmp/out 2>&1; echo \"exit=$?\"",
+		"set -o pipefail; cmd | tail -3; echo $?",
+		"set -euo pipefail; cmd | tail -3; echo $?",
+		// Конвейер без head/tail не режет вывод, и `$?` говорит о последней ступени осмысленно.
+		"cmd | rg foo; echo \"exit=$?\"",
+		// Обратный порядок: сначала читаем код, потом обрезаем вывод.
+		"echo $? | tail -1",
+		// Упоминание флага в тексте команды ничего не включает — здесь и конвейера нет.
+		"rg -n \"set -o pipefail\" docs; echo $?",
+	];
+	for (const command of allowed) {
+		assert.equal(classifyCall(command).allowed, true, command);
+	}
+});
+
+test("pipefail учитывается только своим сегментом `set`, а не упоминанием в тексте", () => {
+	// `echo 'set -o pipefail'` не включает pipefail, поэтому `$?` после конвейера по-прежнему врёт.
+	const verdict = classifyCall("echo 'set -o pipefail'; cmd | tail -3; echo $?");
+	assert.equal(verdict.allowed, false);
 });
