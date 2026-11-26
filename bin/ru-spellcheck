@@ -536,6 +536,18 @@ def main(argv):
     paths = [a for a in paths if a not in skip]
     if not paths:
         return 2
+    # Словари и списки — до чтения входа. Причина: `need_enchant()` перезапускает процесс другим
+    # интерпретатором (`os.execv`), когда в текущем нет enchant, — а stdin к этому моменту уже
+    # прочитан, и новый процесс получает пустой вход: код 0 без единой находки. Локально это не
+    # видно (python3 — системный), в CI видно всегда: setup-python без enchant, /usr/bin/python3 с ним.
+    if homoglyph_only:
+        d, allow, stems, deny = None, set(), [], set()  # script-mixing needs no dictionary at all
+    else:
+        # Project allowlists are looked up from the checked files, so stdin uses the cwd.
+        d = load_dict()
+        allow = load_allow(repo_allow_files(paths))
+        stems = load_stems()
+        deny = load_deny(repo_allow_files(paths, REPO_DENY_NAME))
     inputs = []
     if paths == ["-"]:
         inputs.append(("<stdin>", sys.stdin.read()))
@@ -569,14 +581,6 @@ def main(argv):
                 file=sys.stderr,
             )
             return 3
-    if homoglyph_only:
-        d, allow, stems, deny = None, set(), [], set()  # script-mixing needs no dictionary at all
-    else:
-        # Project allowlists are looked up from the checked files, so stdin uses the cwd.
-        d = load_dict()
-        allow = load_allow(repo_allow_files(paths))
-        stems = load_stems()
-        deny = load_deny(repo_allow_files(paths, REPO_DENY_NAME))
     baseline = load_baseline(baseline_path)  # opt-in: --baseline PATH
     results = []
     for path, text in inputs:
