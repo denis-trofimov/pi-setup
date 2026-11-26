@@ -578,11 +578,11 @@ Three more rules died with that rewrite and are still not carried: a failed revi
 discard the `output:` reports of the children that finished, the artifact is taken against
 `origin/<base>` and not the local base branch, and a reviewer stays in the directory it was given
 instead of walking into a sibling worktree. Each cost a P1 when it was first written up (#15836 п.1,
-#15733 п.2, #15674 п.3) — and the base-branch one is worth re-deriving next: `msb-lk`
-`.pi/skills/implement-plan/SKILL.md` §7 still claims the patch that carries it is applied on this
-machine, which the removal above made false. Re-derive a patch from a fixture when one of them starts costing a round again — the old
-scripts are in the history before this change, and `patches/pi-pstack-models.sh` is the shape to
-copy.
+#15733 п.2, #15674 п.3). The `msb-lk` text that claimed the origin-base patch was applied
+(`.pi/skills/implement-plan/SKILL.md` §7) is corrected in #16153, so nothing points here for a script
+that no longer exists. Re-derive a patch from a fixture when one of them starts costing a round again —
+the old scripts are in the history before this change, and `patches/pi-pstack-models.sh` is the shape
+to copy.
 
 ### `pi-subagents`: a one-child launch needs a task
 
