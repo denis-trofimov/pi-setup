@@ -572,7 +572,10 @@ result (#16149). `src/extension/public-execution.js` checked only that `agent` w
 allowed a whitespace-only `task`, and the message next to it advertised the shape `{ agent, task? }`.
 `patches/pi-subagents-task-required.sh` adds the missing check — one child needs a non-empty `task` —
 in the runtime file and in its bundled copy; `install.sh` re-applies it after every
-`pi update --extensions`:
+`pi update --extensions`. The bundle is built code and spells the same guard differently (`void 0`
+instead of `undefined`, two spaces of indent), so the script finds the branch by its own sentence
+and reuses the indentation of the file it writes; a bundle that lagged behind is reported by
+`--check`, not skipped silently:
 
 ```bash
 ./patches/pi-subagents-task-required.sh --check     # exit 1 if the patch is missing
