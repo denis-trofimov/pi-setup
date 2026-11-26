@@ -57,6 +57,29 @@ The file name carries no PR number on purpose: the number is what creation retur
 `/tmp/pr-create-<n>.txt` can hold a previous run — `tail -1` on a stale file reads as success. `rm -f`
 before the call makes the file's very existence the proof that the call ran.
 
+## The body passes the spellcheck gate before it is published
+
+Bodies here are Russian, and no gate covered them until #16137. In #16096 the body of PR
+`denis-trofimov/pi-setup#60` went out with a dozen damaged words (`конвеер`, a mangled `PIPESTATUS`,
+repeats); it was caught only because the author re-read the file before `gh pr create`. Redmine notes
+have `make note-check`, the PR body had nothing — yet the body is published into GitHub and edited by
+hand afterwards.
+
+Write the body to a file (prose never goes inline through `--body`), then check it:
+
+```bash
+ru-spellcheck --homoglyph-only /tmp/pr-body.md   # exit 1 — fix the text, not the dictionary
+```
+
+`--homoglyph-only` is the gate: Latin look-alikes inside Cyrillic, zero false positives, no dictionary
+needed. On a body longer than ~40 lines the same command exits 3 and asks for the full run — then
+`ru-spellcheck /tmp/pr-body.md` and triage the findings by hand; project slang is legalised in the
+repo's `.ru-spellcheck-allow`, a broken wordform is fixed in the text, and `.ru-spellcheck-deny` stays
+the owner's list (a word from it is a finding even when spelled right).
+
+Only a clean run is followed by `gh pr create --body-file` or `gh api -X PATCH … --input body.json`.
+The command is the same for a rewritten body: check the file again after editing it, before the PATCH.
+
 Use this template for writing the PR body:
 
 ```markdown
