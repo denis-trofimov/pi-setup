@@ -345,3 +345,28 @@ test("pipefail учитывается только своим сегментом
 	const verdict = classifyCall("echo 'set -o pipefail'; cmd | tail -3; echo $?");
 	assert.equal(verdict.allowed, false);
 });
+
+// Имя инструмента pi, набранное как команда bash (#16126): в сессии #16110 дважды вернулось
+// `bash: ffgrep: command not found`, и каждый раз ход уходил на повтор той же цели.
+test("имя инструмента pi в bash отказано с вызовом самого тула", () => {
+	for (const command of [
+		'ffgrep --pattern "publish_gates_report" --path scripts/ci/',
+		"fffind RunDetached",
+		'ffgrep --pattern "x" | head -3',
+	]) {
+		const verdict = classifyCall(command);
+		assert.equal(verdict.allowed, false, command);
+		assert.match(verdict.reason, /инструмент pi, а не бинарник/);
+		assert.match(verdict.hint, /ffgrep pattern=/, command);
+	}
+});
+
+test("настоящие команды bash именем тула не задеваются", () => {
+	for (const command of [
+		"while read -r line; do echo \"$line\"; done < file.txt",
+		"printf 'ffgrep' | wc -c",
+		"rg -n 'ffgrep' extensions/",
+	]) {
+		assert.equal(classifyCall(command).allowed, true, command);
+	}
+});
