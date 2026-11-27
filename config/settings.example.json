@@ -13,8 +13,8 @@
     "npm:@ff-labs/pi-fff",
     "npm:pi-subagents"
   ],
-  "defaultProvider": "openrouter",
-  "defaultModel": "deepseek/deepseek-v4.1-flash-1017",
+  "defaultProvider": "routerai",
+  "defaultModel": "~deepseek/deepseek-v4-flash-latest",
   "defaultThinkingLevel": "low",
   "httpProxy": "http://127.0.0.1:10808",
   "hideThinkingBlock": true,
