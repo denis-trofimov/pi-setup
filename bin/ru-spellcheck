@@ -44,6 +44,14 @@ banned on paper only. The denylist is not consulted by
 `--homoglyph-only`: that gate is about scripts, and mixed-script deny entries are caught there as
 HOMOGLYPH anyway.
 
+Rewrites — the answer to "then write what", next to the denylist and deliberately a separate file:
+  * personal: $XDG_CONFIG_HOME/ru-spellcheck/deny-rewrites.txt (seeded and overwritten from the repo);
+  * project:  .ru-spellcheck-deny-rewrites at the repository root.
+A line is `<слово> -> <замена>`, with the same exact-form and `слово*` stem rules as the denylist;
+a line without `->` means "no replacement" and the DENY finding keeps its old text. The ban is
+policy and belongs to the person; the replacement is advice and may be written by an agent — so it
+lives in its own file, not as a third column of the deny list (docs/adr/0002).
+
 Gate: `--homoglyph-only` is the gate for short prose (a chat message, a Redmine note): zero false
 positives, exit 1 on a hit. A commit body is usually longer than 40 lines, so it takes the full
 check (or `--allow-long`) instead: `ru-spellcheck - < /tmp/msg.txt`. It sees only script mixing, so a long document —
@@ -68,8 +76,11 @@ import sys
 CONFIG_HOME = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
 ALLOW = os.path.join(CONFIG_HOME, "ru-spellcheck", "allow.txt")
 DENY = os.path.join(CONFIG_HOME, "ru-spellcheck", "deny.txt")
+DENY_REWRITES = os.path.join(CONFIG_HOME, "ru-spellcheck", "deny-rewrites.txt")
 REPO_ALLOW_NAME = ".ru-spellcheck-allow"
 REPO_DENY_NAME = ".ru-spellcheck-deny"
+REPO_DENY_REWRITES_NAME = ".ru-spellcheck-deny-rewrites"
+REWRITE_SEPARATOR = "->"
 BASELINE = os.path.join(CONFIG_HOME, "ru-spellcheck", "baseline.txt")
 # Short-prose threshold for --homoglyph-only: past it the gate cannot see the error class it is
 # asked to catch, so it refuses the input instead of reporting it clean (#15799 п.2).
@@ -282,6 +293,68 @@ def load_deny(extra_files=()):
     return out
 
 
+def read_rewrites_file(path):
+    """Approved replacement per banned word: `<слово> -> <замена>`, or `<слово>` for none.
+
+    The ban itself stays in the denylist; this file only answers "write it how", because the gate
+    could say "нельзя" and nothing else — eight words and four red runs on four notes in one session
+    (#90). The `->` separator cannot occur inside a word, so no escaping is needed; a line without
+    it means the replacement is unknown for that word.
+    """
+
+    out = {}
+    if not path or not os.path.exists(path):
+        return out
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            entry = line.strip()
+            if not entry or entry.startswith("#"):
+                continue
+            word, _, replacement = entry.partition(REWRITE_SEPARATOR)
+            word = word.strip().lower()
+            if word:
+                out[word] = replacement.strip()
+    return out
+
+
+def load_rewrites(extra_files=()):
+    """Personal rewrites plus the project ones found next to the checked files."""
+    out = read_rewrites_file(DENY_REWRITES)
+    for path in extra_files:
+        out.update(read_rewrites_file(path))
+    return out
+
+
+def rewrite_for(word, rewrites):
+    """Замена для слова: точная форма, иначе `слово*` по тому же стему, что у deny-списка.
+
+    A stem entry (`бамп*`) suggests for every form the denylist bans (`бамп`, `бампом`), which is
+    where the gate is actually met; the stem is the same crude one, so a suggestion never appears
+    for a word the denylist itself would let through.
+    """
+
+    if not rewrites:
+        return ""
+    low = word.lower().strip(".,;:!?«»()\"'")
+    if not low:
+        return ""
+    forms = {low, low.replace("ё", "е")}
+    for form in forms:
+        if rewrites.get(form):
+            return rewrites[form]
+    stems = {
+        entry[:-1].replace("ё", "е"): replacement
+        for entry, replacement in rewrites.items()
+        if entry.endswith("*") and len(entry) > 1 and replacement
+    }
+    for form in forms:
+        for piece in stem(form):
+            hit = stems.get(piece.replace("ё", "е"))
+            if hit:
+                return hit
+    return ""
+
+
 def is_denied(word, deny):
     """Exact form always; entries ending with `*` also cover the forms of that word.
 
@@ -373,7 +446,7 @@ def trim_edges(word):
     return word
 
 
-def check_text(text, d, allow, path, homoglyph_only, baseline=None, stems=None, deny=None):
+def check_text(text, d, allow, path, homoglyph_only, baseline=None, stems=None, deny=None, rewrites=None):
     findings = []
     hidden = mask(text)
     line_starts = [0]
@@ -399,7 +472,12 @@ def check_text(text, d, allow, path, homoglyph_only, baseline=None, stems=None, 
         for s in segs:
             if is_denied(s, deny):
                 # Приоритет над allow, словарём и baseline: слово не вернуть, его только заменить.
-                findings.append((m.start(), "DENY", s.rstrip("."), "слово из deny-списка"))
+                # Замена — из deny-rewrites: отказ, который говорит только «нельзя», возвращает
+                # агента с тем же словом или с новым жаргоном (#90).
+                replacement = rewrite_for(s, rewrites or {})
+                note = (f"слово из deny-списка; замените на: {replacement}" if replacement
+                        else "слово из deny-списка")
+                findings.append((m.start(), "DENY", s.rstrip("."), note))
                 denied.add(s)
         if not CYR.search(tok):
             continue  # pure-Latin token: the dictionary has nothing to say about it
@@ -540,6 +618,7 @@ def main(argv):
     # интерпретатором (`os.execv`), когда в текущем нет enchant, — а stdin к этому моменту уже
     # прочитан, и новый процесс получает пустой вход: код 0 без единой находки. Локально это не
     # видно (python3 — системный), в CI видно всегда: setup-python без enchant, /usr/bin/python3 с ним.
+    rewrites = {}
     if homoglyph_only:
         d, allow, stems, deny = None, set(), [], set()  # script-mixing needs no dictionary at all
     else:
@@ -548,6 +627,7 @@ def main(argv):
         allow = load_allow(repo_allow_files(paths))
         stems = load_stems()
         deny = load_deny(repo_allow_files(paths, REPO_DENY_NAME))
+        rewrites = load_rewrites(repo_allow_files(paths, REPO_DENY_REWRITES_NAME))
     inputs = []
     if paths == ["-"]:
         inputs.append(("<stdin>", sys.stdin.read()))
@@ -584,7 +664,7 @@ def main(argv):
     baseline = load_baseline(baseline_path)  # opt-in: --baseline PATH
     results = []
     for path, text in inputs:
-        results += check_text(text, d, allow, path, homoglyph_only, baseline, stems, deny)
+        results += check_text(text, d, allow, path, homoglyph_only, baseline, stems, deny, rewrites)
     if as_json:
         print(json.dumps(results, ensure_ascii=False, indent=1))
     else:

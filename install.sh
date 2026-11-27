@@ -971,8 +971,23 @@ install_spellcheck_deny() {
   fi
 }
 
+# Approved replacements for the deny list. Same direction as the deny list — the repo copy is
+# authoritative and a restore overwrites the live file: the replacement is advice the whole team
+# should see, not a local convenience. It is a separate file from deny.txt on purpose: the ban is
+# human-owned policy, the advice is not, and the deny list is guarded by path-guard and a commit
+# hook that this file deliberately does not trip (docs/adr/0002).
+install_spellcheck_deny_rewrites() {
+  local cfg_home="${XDG_CONFIG_HOME:-$HOME/.config}"
+  if [[ -f "$ROOT/config/ru-spellcheck/deny-rewrites.txt" ]]; then
+    copy_path "$ROOT/config/ru-spellcheck/deny-rewrites.txt" "$cfg_home/ru-spellcheck/deny-rewrites.txt"
+  else
+    echo "warning: $ROOT/config/ru-spellcheck/deny-rewrites.txt is missing — the deny rewrites were not restored"
+  fi
+}
+
 install_spellcheck_allow
 install_spellcheck_deny
+install_spellcheck_deny_rewrites
 
 # Dotfiles that live outside ~/.pi/agent (tmux, and anything else that lands under
 # home/) are mirrored in a home/ tree that shadows $HOME. They are not Pi config, so a
