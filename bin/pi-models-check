@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Probe every model id in the delegation allow list against the provider.
 #
-# Why: `pstack_adapter models`, `subagent({ action: "list" })` and
-# `models-store.json` list every id Pi knows, not every id the provider serves.
+# Why: `subagent({ action: "list" })` and `models-store.json` list every id Pi
+# knows, not every id the provider serves.
 # An OpenRouter workspace guardrail can cap the workspace to a subset, and a
 # delegation to anything outside it dies with
 #   404 ... 0 endpoints out of N requested are available matching your guardrail restrictions

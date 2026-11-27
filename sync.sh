@@ -394,17 +394,6 @@ for path in sys.argv[1:]:
 PY
 }
 
-copy_pstack_adapter_example() {
-  local src="$PI_HOME/pi-pstack-adapter.json"
-  local dst="$ROOT/config/pi-pstack-adapter.example.json"
-  if [[ ! -f "$src" ]]; then
-    echo "pstack adapter config: no $src; leaving $dst untouched"
-    return 0
-  fi
-  cp "$src" "$dst"
-  echo "pstack adapter config: pinned roles/panels backed up into $dst"
-}
-
 # models.json is machine-specific (API keys, custom endpoints) so it is never
 # copied wholesale. The portable part is providers.<name>.modelOverrides, and it
 # drifts silently: a pin added live never reaches the example, so a restore
@@ -443,10 +432,9 @@ print("models ok: example updated from live overrides: " + ", ".join(sorted(adde
 PY
 }
 
-# The allow list, the pstack role pinning and the delegation-models table are
-# three copies of one fact: which model ids the provider actually serves. A
-# restore from a stale copy is what loses a delegation run, so refuse to sync
-# when they disagree.
+# The allow list and the delegation-models table are two copies of one fact:
+# which model ids the provider actually serves. A restore from a stale copy is
+# what loses a delegation run, so refuse to sync when they disagree.
 #
 # The table lives in config/delegation-models.md, not in config/AGENTS.md: the
 # AGENTS.md text is loaded into every session, and a table needed only when a
@@ -461,7 +449,6 @@ from pathlib import Path
 
 root = Path(sys.argv[1])
 settings_path = root / "config" / "settings.example.json"
-adapter_path = root / "config" / "pi-pstack-adapter.example.json"
 agents_path = root / "config" / "AGENTS.md"
 models_path = root / "config" / "delegation-models.md"
 errors = []
@@ -486,20 +473,6 @@ for agent, rule in sorted((scope.get("agents") or {}).items()):
     extra = sorted(set(rule.get("allow") or []) - set(allow))
     if extra:
         errors.append(f"modelScope.agents.{agent} names ids outside modelScope.allow: {extra}")
-
-if adapter_path.is_file():
-    adapter = json.loads(adapter_path.read_text())
-    ids = set()
-    for role, spec in sorted((adapter.get("models") or {}).items()):
-        for token in str(spec).split():
-            model = token.split(":", 1)[0]
-            if "/" not in model:
-                continue
-            ids.add(model)
-    extra = sorted(ids - set(allow))
-    if extra:
-        errors.append(f"config/pi-pstack-adapter.example.json names ids outside modelScope.allow: {extra}")
-    print(f"models ok: {len(ids)} adapter role/panel ids are inside the allow list")
 
 # config/AGENTS.md is a required repo artifact, not an optional one: sync.sh
 # overwrites it wholesale from the live file, so a live AGENTS.md that lost its
@@ -630,7 +603,6 @@ copy_dir_contents "$PI_HOME/themes" "$ROOT/themes"
 copy_selected_skills
 mkdir -p "$ROOT/config"
 copy_settings_example
-copy_pstack_adapter_example
 sync_models_overrides
 if [[ -f "$PI_HOME/mcp.json" ]]; then
   cp "$PI_HOME/mcp.json" "$ROOT/config/mcp.example.json"
@@ -682,9 +654,6 @@ fi
 validate_json "$ROOT/package.json" "$ROOT/config/settings.example.json"
 if [[ -f "$ROOT/config/models.example.json" ]]; then
   validate_json "$ROOT/config/models.example.json"
-fi
-if [[ -f "$ROOT/config/pi-pstack-adapter.example.json" ]]; then
-  validate_json "$ROOT/config/pi-pstack-adapter.example.json"
 fi
 validate_models
 if [[ -f "$ROOT/config/mcp.example.json" ]]; then
