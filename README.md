@@ -105,8 +105,8 @@ Do **not** install this checkout as an active Pi package in normal use. Loading 
   - `micme.example.json` — Micme voice dictation wired to the local Handy CLI (see [Voice dictation](#voice-dictation-handy--micme))
   - `playwright-mcp.json` — base Playwright MCP config the Xvfb wrapper derives from (see [Browser automation](#browser-automation-playwright-mcp))
   - `models.example.json` — the OpenRouter vendor pin; `--copy-config` merges it into `models.json` instead of replacing it
-  - `AGENTS.md` — the delegation model policy: the blocked list (`deepseek-v4-pro`, `google/*`/`gemini-*`, `openai/*`/`gpt-*`, all `routerai/*`), the enforcement gate, the delegation rules, and the pointer to the allowed table; no Cursor model slugs; the table it points at is `delegation-models.md` below
-  - `delegation-models.md` — the 14 ids the OpenRouter workspace guardrail serves, with prices, the cache-read ranking and assigned roles; restored to `~/.pi/agent/docs/delegation-models.md`, read before delegating
+  - `AGENTS.md` — the delegation model policy: the blocked list (`deepseek-v4-pro`, `google/*`/`gemini-*`, `openai/*`/`gpt-*`, `routerai/*` ids without an allowed counterpart), the enforcement gate, the delegation rules, and the pointer to the allowed table; no Cursor model slugs; the table it points at is `delegation-models.md` below
+  - `delegation-models.md` — the 14 ids the OpenRouter workspace guardrail serves, with prices, the cache-read ranking, assigned roles, and the `routerai/` mirror the gate uses on a machine without an OpenRouter key; restored to `~/.pi/agent/docs/delegation-models.md`, read before delegating
 
 ## Set up from GitHub on a machine
 
@@ -167,10 +167,10 @@ The example settings pin the startup model with `defaultProvider` + `defaultMode
 
 Provider routing in the example:
 
-- `defaultProvider` is `openrouter` with `defaultModel` `deepseek/deepseek-v4.1-flash-1017`; the key comes from `OPENROUTER_API_KEY`.
+- `defaultProvider` is `routerai` with `defaultModel` `~deepseek/deepseek-v4-flash-latest` (the tilde is part of the id in the local catalog); the key comes from `ROUTERAI_API_KEY`. On a machine that has OpenRouter instead, the pair is `openrouter` + `deepseek/deepseek-v4.1-flash-1017` — `defaultModel` is the bare model id, no provider prefix either way.
 - `httpProxy` is `http://127.0.0.1:10808` — the local xray inbound. Pi applies it as `HTTP_PROXY`/`HTTPS_PROXY` for its own HTTP clients (only when those env vars are unset), so OpenRouter works even when the shell has no proxy env. Change or drop it on machines without that proxy. Keep `NO_PROXY=localhost,127.0.0.1,::1` in the shell so local endpoints (LM Studio, local MCP) bypass the proxy.
-- `subagents.modelScope` is the delegation gate: `enforce: true`, `strict: false` in the example, `allow` = the 14 ids the OpenRouter workspace guardrail serves, plus narrower lists for `reviewer`, `oracle`, and `evidence-auditor`. `strict: true` on a live machine additionally rejects an id the gate cannot classify; the example ships `false` so a different cap does not block every launch. The cap is provider-side and outside local config: a catalog entry is not proof.
-- `subagents.defaultModel` is `openrouter/z-ai/glm-5.3-flash`, and every bundled agent has an explicit `agentOverrides.<name>.model`, so a delegation that names no model lands on a capped id instead of inheriting the parent's.
+- `subagents.modelScope` is the delegation gate: `enforce: true`, `strict: false` in the example, `allow` = the 14 ids the OpenRouter workspace guardrail serves plus the `routerai/` mirror of each one the local provider serves (21 entries), and narrower lists for `reviewer`, `oracle`, and `evidence-auditor`. `strict: true` on a live machine additionally rejects an id the gate cannot classify; the example ships `false` so a different cap does not block every launch. The cap is provider-side and outside local config: a catalog entry is not proof.
+- `subagents.defaultModel` is `routerai/z-ai/glm-5.3-flash` (`openrouter/z-ai/glm-5.3-flash` where OpenRouter is configured), and every bundled agent has an explicit `agentOverrides.<name>.model`, so a delegation that names no model lands on a capped id instead of inheriting the parent's.
 - Verify the allow list against the provider before trusting it: `pi-models-check`. A 404 is the cap, not local config.
 - The vendor pin (`deepinfra → inference-net → primeintellect`) lives in `~/.pi/agent/models.json` as `providers.openrouter.modelOverrides`, not in `settings.json`. `config/models.example.json` carries it for restores: `--copy-config` deep-merges that file into the live `models.json`, so other providers (RouterAI, custom endpoints) survive. Order is by observed cost, not list price: OpenRouter's own per-endpoint cache hit rate decides it, because a uniform 94% cache-read assumption flatters providers that cache worse. Read the rates from the frontend stats API the model page uses:
 

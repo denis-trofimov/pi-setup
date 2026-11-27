@@ -50,6 +50,31 @@ option" and do not put them in bulk seats.
 Provider routing matters too: `deepseek-v4.1-flash-1017` on InferenceNet cost 5x what the same
 model cost on DeepInfra ($0.0040 vs $0.00077 per call). Pin `DeepInfra` when the volume is large.
 
+## Same ids through RouterAI
+
+Where the installation has no `openrouter` provider (no key, empty `auth.json`, catalog under
+`providers.routerai`), the gate carries a `routerai/` mirror of every id above that the local catalog
+serves — 7 of the 14 — and the delegation targets name that form. The bare slugs are the same, so the
+table above stays the policy; only the prefix changes.
+
+| id under `routerai/` | in | cache read | out |
+| --- | --- | --- | --- |
+| `routerai/deepseek/deepseek-v4.1-flash-1017` | 0.0322 | 0.0059 | 0.5861 |
+| `routerai/deepseek/deepseek-v4.1-flash` | 0.065 | 0.0010 | 0.261 |
+| `routerai/deepseek/deepseek-v4-flash-vision-exp` | 0.287 | 0.0090 | 0.860 |
+| `routerai/z-ai/glm-5.3` | 0.0931 | 0.0918 | 1.8649 |
+| `routerai/z-ai/glm-5.3-flash` | 0.077 | 0.0153 | 0.3663 |
+| `routerai/z-ai/glm-5.2` | 0.251 | 0.047 | 0.790 |
+| `routerai/minimax/minimax-m3` | 0.306 | 0.066 | 1.276 |
+
+Read from `providers.routerai.models[].cost` in the live `models.json` on 2026-11-27, dollars per
+million tokens. `glm-5.3-flash` bills cache reads at 20% there instead of OpenRouter's 75%, and the
+deepseek ratios hold, so the cache-read ranking above still picks the seats. The other 7 ids
+(`glm-5`, `glm-5.1`, `glm-4.7-flash`, `ling-3.*`, `minimax-m3.1-flash`) exist only on OpenRouter and
+stay unused on such a machine.
+
+`pi-models-check` on the seven `routerai/` ids, 2026-11-27: `7 ok, 0 failed, 0 inconclusive`.
+
 ## Re-verify before trusting
 
 The table is a dated observation, not a standing fact. Run `pi-models-check` (one `max_tokens: 1`

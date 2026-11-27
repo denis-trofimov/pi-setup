@@ -17,27 +17,49 @@ from that table are policy — a model in the local catalog is not evidence the 
   the cap: it returns 404 from the guardrail, not from the model. This is what broke the project
   reviewer once already.
 - `google/*`, any `gemini-*` id; `openai/*`, any `gpt-*`, `o3`, `o4` id; `anthropic/*`.
-- Every `routerai/...` id, including the ones whose name matches an allowed id. The cap covers
-  OpenRouter only, so routerai models are outside the policy even when they answer.
+- Every `routerai/...` id that has no allowed counterpart. RouterAI is a different provider and its
+  `routerai/...` ids are separate entries in the policy, not aliases of the OpenRouter ones — see
+  "Mirror on a machine without OpenRouter" below. An id that answers `curl` is still outside the
+  policy unless the table in `~/.pi/agent/docs/delegation-models.md` carries its bare slug.
 
 Never delegate to a blocked model, never retry one after it fails, and never offer one as an
 option. Anything outside the table needs the user's explicit approval first.
+
+## Mirror on a machine without OpenRouter
+
+The gate compares the full `provider/id`, so an id is allowed only under the provider written in
+`modelScope.allow`. A machine whose registry has no `openrouter` provider at all — no
+`OPENROUTER_API_KEY`, empty `auth.json`, catalog under `providers.routerai` — reaches 7 of the 14
+ids through RouterAI under the same bare slug, and nothing else; naming `openrouter/…` there fails
+with `Unknown subagent model` before a request goes out, and `pi-models-check` reports
+`no API key for provider openrouter` for all 14.
+
+On such a machine the allow list carries the 14 `openrouter/` ids **plus** a `routerai/` mirror of
+every id the local catalog serves (21 entries), `subagents.defaultModel` and every
+`agentOverrides.<name>.model` name the `routerai/` form, and `strict: true` stays on. The mirror is
+an id form, not a wider policy: a `routerai/` id without an allowed counterpart stays blocked, and
+the check that keeps the three copies of the list in step (`sync.sh` → `validate_models`) compares
+bare slugs, so both prefixes match the same table row. Prices are not the OpenRouter ones: the
+routerai rates sit in `providers.routerai.models[].cost` of the live `models.json`.
 
 ## Enforcement
 
 One hard gate, in user config; do not weaken it without the user asking.
 
-- `~/.pi/agent/settings.json` — `subagents.modelScope` is `enforce: true, strict: true` with the 14
-  ids as the allow list, so any launch naming a model outside the cap is rejected before the child
-  starts, whoever started it (workflow or a bare `subagent` call). The repo example
-  ships the same list with `strict: false`, so a machine whose cap differs still launches instead of
-  refusing every call.
-- `subagents.defaultModel` is `openrouter/z-ai/glm-5.3-flash` and every bundled agent has an
-  explicit `agentOverrides.<name>.model`, so a call that names no model lands on a capped model
-  instead of the parent's. `inherit` passes only while the parent session model is itself inside
-  the cap, which is the intended behaviour, not an exemption. For `reviewer` the override is
-  `deepseek-v4.1-flash-1017`, and it is the only deepseek variant its allow list accepts: naming
-  `openrouter/deepseek/deepseek-v4.1-flash` (no `-1017`) passes the cap and fails the gate.
+- `~/.pi/agent/settings.json` — `subagents.modelScope` is `enforce: true, strict: true` with the
+  allowed ids as the allow list — 14 `openrouter/` entries plus the `routerai/` mirror wherever the
+  local provider serves the same bare slug (21 on an OpenRouter-less machine, see above) — so any
+  launch naming a model outside the cap is rejected before the child starts, whoever started it
+  (workflow or a bare `subagent` call). The repo example ships the same list with `strict: false`,
+  so a machine whose cap differs still launches instead of refusing every call.
+- `subagents.defaultModel` is `routerai/z-ai/glm-5.3-flash` on an OpenRouter-less machine and
+  `openrouter/z-ai/glm-5.3-flash` where OpenRouter is configured — the same upstream model — and
+  every bundled agent has an explicit `agentOverrides.<name>.model`, so a call that names no model
+  lands on a capped model instead of the parent's. `inherit` passes only while the parent session
+  model is itself inside the cap, which is the intended behaviour, not an exemption. For `reviewer`
+  the override is `deepseek-v4.1-flash-1017`, and it is the only deepseek variant its allow list
+  accepts: naming `deepseek/deepseek-v4.1-flash` (no `-1017`) passes the cap and fails the gate,
+  under either provider prefix.
 - `reviewer`, `oracle`, and `evidence-auditor` all default to `deepseek-v4.1-flash-1017`, and
   additionally carry a per-agent allow list, so a review cannot escalate to `glm-5.2`. Thinking:
   `reviewer` and `oracle` at `high`, `evidence-auditor` at `off` (matching a claim against a fetched
