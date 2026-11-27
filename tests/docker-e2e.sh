@@ -218,8 +218,6 @@ jq -e ".subagents.modelScope.allow | length == 14" /root/.pi/agent/settings.json
 jq -e ".subagents.defaultModel == \"openrouter/z-ai/glm-5.3-flash\"" /root/.pi/agent/settings.json >/dev/null
 jq -e ".subagents.modelScope as \$s | [\$s.agents[] | .allow[]] - \$s.allow | length == 0" /root/.pi/agent/settings.json >/dev/null
 jq -e "[.subagents.agentOverrides | keys[]] | (index(\"reviewer\") != null and index(\"oracle\") != null and index(\"evidence-auditor\") != null and index(\"uat-browser\") != null)" /root/.pi/agent/settings.json >/dev/null
-test -f /root/.pi/agent/pi-pstack-adapter.json
-jq -e --slurpfile s /root/.pi/agent/settings.json "[.models[] | split(\" \")[] | split(\":\")[0]] | unique | map(. as \$m | \$s[0].subagents.modelScope.allow | index(\$m)) | all(. != null)" /root/.pi/agent/pi-pstack-adapter.json >/dev/null
 # Rows of the allowed table: first cell is a provider-qualified id. The old
 # pattern expected "<price> / ..." in the second cell and matched nothing even
 # before the table moved out of AGENTS.md (#15647).

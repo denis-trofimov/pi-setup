@@ -9,8 +9,8 @@ set -euo pipefail
 # Usage:
 #   ./install.sh                         # install sync helper + compact launcher only
 #   ./install.sh --copy-config           # also overwrite ~/.pi/agent/settings.json and mcp.json,
-#                                        # overwrite AGENTS.md/pi-pstack-adapter.json when
-#                                        # restoring, copy the home/ dotfiles (e.g. ~/.tmux.conf),
+#                                        # overwrite AGENTS.md when restoring, copy the home/
+#                                        # dotfiles (e.g. ~/.tmux.conf),
 #                                        # and merge config/vscode-keybindings.json
 #   ./install.sh --restore               # also restore extensions/themes/skills from this repo
 #   ./install.sh --restore --dry-run     # preview changes without writing files
@@ -68,8 +68,8 @@ used to back up that live setup to GitHub and recreate it on any machine.
 Usage:
   ./install.sh                         # install sync helper + compact launcher only
   ./install.sh --copy-config           # also overwrite ~/.pi/agent/settings.json and mcp.json,
-                                       # overwrite AGENTS.md/pi-pstack-adapter.json when
-                                       # restoring, copy the home/ dotfiles (~/.tmux.conf),
+                                       # overwrite AGENTS.md when restoring, copy the home/
+                                       # dotfiles (~/.tmux.conf),
                                        # and merge config/vscode-keybindings.json
   ./install.sh --restore               # also restore extensions/themes/skills into ~/.pi/agent
   ./install.sh --restore --dry-run     # preview changes without writing files
@@ -205,12 +205,9 @@ copy_dir_contents() {
   run cp -R "$src"/. "$dst"/
 }
 
-# AGENTS.md holds always-on instructions for every Pi session, and
-# pi-pstack-adapter.json pins every pstack role and panel to a model id the provider
-# actually serves (with the roles unset the adapter passes `pstack:<role>` and the
-# child inherits the parent's model, which is how a delegation escaped the workspace
-# cap). Both can carry machine-local rules, so restore each only when the live copy
-# is absent; --restore --copy-config asks for the overwrite.
+# AGENTS.md holds always-on instructions for every Pi session, and it can carry
+# machine-local rules, so restore it only when the live copy is absent;
+# --restore --copy-config asks for the overwrite.
 install_config_if_absent() {
   local src="$1"
   local dst="$2"
@@ -333,7 +330,7 @@ make_backup() {
       touch "$BACKUP_DIR/.absent-$name"
     fi
   done
-  for name in settings.json mcp.json playwright-mcp.json models.json pi-pstack-adapter.json; do
+  for name in settings.json mcp.json playwright-mcp.json models.json; do
     if [[ -f "$PI_HOME/$name" ]]; then
       cp "$PI_HOME/$name" "$BACKUP_DIR/$name"
     else
@@ -401,7 +398,7 @@ revert_backup() {
       echo "Backup has no $name/ state; leaving $PI_HOME/$name unchanged."
     fi
   done
-  for name in settings.json mcp.json playwright-mcp.json models.json pi-pstack-adapter.json AGENTS.md docs/delegation-models.md docs/session-logs.md; do
+  for name in settings.json mcp.json playwright-mcp.json models.json AGENTS.md docs/delegation-models.md docs/session-logs.md; do
     if [[ -f "$backup/$name" ]]; then
       copy_path "$backup/$name" "$PI_HOME/$name"
     elif [[ -f "$backup/.absent-$(basename "$name")" ]]; then
@@ -682,7 +679,6 @@ if [[ "$RESTORE" == "1" ]]; then
   if [[ -f "$PI_HOME/AGENTS.md" ]] && ! grep -q "docs/delegation-models.md" "$PI_HOME/AGENTS.md"; then
     echo "warning: $PI_HOME/AGENTS.md does not point to docs/delegation-models.md — the restored table will not be read (run --restore --copy-config to take the repo copy)"
   fi
-  install_config_if_absent "$ROOT/config/pi-pstack-adapter.example.json" "$PI_HOME/pi-pstack-adapter.json" "pi-pstack-adapter.json"
   if compgen -G "$ROOT/skills/browser-uat/scripts/*.sh" >/dev/null; then
     run chmod +x "$PI_HOME/skills/browser-uat/scripts/"*.sh
   fi

@@ -1,6 +1,6 @@
 # Delegation models: what the provider actually serves
 
-Read this **before delegating or starting a pstack workflow**. `AGENTS.md` keeps the policy and the
+Read this **before delegating**. `AGENTS.md` keeps the policy and the
 gate; this file keeps the table and the price arithmetic, because it is needed only when a model id
 has to be chosen, not on every session start.
 
@@ -16,7 +16,7 @@ the local catalog is not evidence it works.
 | `deepseek/deepseek-v4.1-flash` | 0.14 | **0.0042 (3%)** | 0.42 | same model, unversioned |
 | `deepseek/deepseek-v4-flash-vision-exp` | 0.44 | 0.014 (3%) | 1.32 | vision experiments |
 | `z-ai/glm-5.3` | 0.0699 | **0.0689 (99%)** | 1.40 | `judgment`, `strongest-judgment`, one arena cross-judge seat |
-| `z-ai/glm-5.3-flash` | 0.0399 | 0.030 (75%) | 0.0784 | default bulk model: every agent and pstack runner role |
+| `z-ai/glm-5.3-flash` | 0.0399 | 0.030 (75%) | 0.0784 | default bulk model: every agent and runner role |
 | `z-ai/glm-5.2` | 0.0070 | 0.0060 (86%) | 6.80 | allowed, not assigned; most expensive output in the cap |
 | `z-ai/glm-5.1` | 1.40 | 0.26 (19%) | 4.40 | allowed, not assigned |
 | `z-ai/glm-5` | 1.00 | 0.20 (20%) | 3.20 | allowed, not assigned |

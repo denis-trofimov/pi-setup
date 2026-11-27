@@ -11,8 +11,7 @@
     "npm:@narumitw/pi-goal",
     "npm:@juicesharp/rpiv-advisor",
     "npm:@ff-labs/pi-fff",
-    "npm:pi-subagents",
-    "npm:pi-pstack-adapter"
+    "npm:pi-subagents"
   ],
   "defaultProvider": "openrouter",
   "defaultModel": "deepseek/deepseek-v4.1-flash-1017",
@@ -27,8 +26,7 @@
   "extensionChangelogVersions": {
     "{\"source\":\"npm:pi-mcp-adapter\",\"scope\":\"user\"}": "7.0.1",
     "{\"source\":\"npm:@narumitw/pi-goal\",\"scope\":\"user\"}": "0.55.4",
-    "{\"source\":\"npm:pi-subagents\",\"scope\":\"user\"}": "0.89.2",
-    "{\"source\":\"npm:pi-pstack-adapter\",\"scope\":\"user\"}": "0.12.0"
+    "{\"source\":\"npm:pi-subagents\",\"scope\":\"user\"}": "0.89.2"
   },
   "extensions": [
     "-builtin:mcp",
