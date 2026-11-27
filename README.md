@@ -364,6 +364,7 @@ tests/prek-gitleaks.sh               # commit hook: a bare provider key is block
 tests/two-copy-guard.sh              # sync/install refuse to overwrite a copy that has edits of its own, and sync refuses to roll the repo back to a version the live copy still holds
 tests/restore-worktree-symlinks.sh   # ~/.local/bin links point at the main checkout, not at a worktree
 tests/restore-stale-checkout.sh      # --restore names branch@commit, warns about a lagging checkout and a dirty tree
+tests/rg-empty-pattern.sh            # rg wrapper: an empty pattern is refused with the wc -l hint, a non-empty one searches
 ```
 
 Files that live in two copies — `skills/`, `config/AGENTS.md`, the spellcheck dictionaries — go through
