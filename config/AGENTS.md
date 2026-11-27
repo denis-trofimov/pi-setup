@@ -1,13 +1,13 @@
 # Delegation model policy
 
-Pi knows more model ids than this machine can reach. A listing from `pstack_adapter models`,
-`subagent({ action: "list" })`, or any catalog is **not** proof that the provider serves a model.
+Pi knows more model ids than this machine can reach. A listing from `subagent({ action: "list" })`
+or any model catalog is **not** proof that the provider serves a model.
 An OpenRouter workspace guardrail ("model cap") serves exactly 14 model ids, and a fan-out that
 picks anything else loses the run with `404 ... 0 endpoints out of 14 ... guardrail restrictions`.
 
 ## Allowed
 
-**Before delegating or starting a pstack workflow, read `~/.pi/agent/docs/delegation-models.md`:**
+**Before delegating, read `~/.pi/agent/docs/delegation-models.md`:**
 the 14 allowed ids, their prices, the cache-read ranking and the provider-routing note. Only ids
 from that table are policy — a model in the local catalog is not evidence the cap serves it.
 
@@ -29,7 +29,7 @@ One hard gate, in user config; do not weaken it without the user asking.
 
 - `~/.pi/agent/settings.json` — `subagents.modelScope` is `enforce: true, strict: true` with the 14
   ids as the allow list, so any launch naming a model outside the cap is rejected before the child
-  starts, whoever started it (pstack skill, workflow, or a bare `subagent` call). The repo example
+  starts, whoever started it (workflow or a bare `subagent` call). The repo example
   ships the same list with `strict: false`, so a machine whose cap differs still launches instead of
   refusing every call.
 - `subagents.defaultModel` is `openrouter/z-ai/glm-5.3-flash` and every bundled agent has an
@@ -58,16 +58,6 @@ One hard gate, in user config; do not weaken it without the user asking.
   while the seat stays on a model that maps it — `evidence-auditor` may also name `glm-5.3-flash`,
   where `off` becomes `low`. Verify by running the configured pairs through `clampThinkingLevel`,
   not by reading the number you wrote.
-- `~/.pi/agent/pi-pstack-adapter.json` pins every pstack role and panel to a capped model (see the
-  `Model roles` table of `pstack_adapter status`). `glm-5.3` is assigned only to `judgment`,
-  `strongest-judgment`, and one seat of `arena-cross-judge-pool`; the six runner roles (`feature`,
-  `refactoring`, `bug-fix`, `perf-issue`, `hillclimb`, `general`) run `glm-5.3-flash` at thinking
-  `low`, while the panel runner seats (`arena-runners`, `architect-runners`,
-  `interrogate-reviewers`) keep `high` because a panel is a comparison, not a pass.
-  `strongest-judgment` asks `xhigh`, which `glm-5.3` cannot serve, so it clamps up to `max`: that
-  one is deliberate and is the only clamp the config keeps. The file carries no `modelFilter`: that
-  filter also blocked every delegation that named no model, which broke `code-review` and any skill
-  that lets a child inherit, so it was removed on purpose. `modelScope` is the gate.
 - The table in `~/.pi/agent/docs/delegation-models.md` is a dated observation, not a standing
   fact. Re-verify it with `pi-models-check` (one `max_tokens: 1` request per id, exit 1 on 404)
   before trusting it after a provider or guardrail change. A 404 there is the cap, not local config.
@@ -75,11 +65,7 @@ One hard gate, in user config; do not weaken it without the user asking.
 ## Rules
 
 - Never pass a Cursor model slug: `claude-opus-5-5-xhigh`, `grok-4.7-xhigh-fast`, `composer-*`,
-  `cursor-grok-*`. They do not exist in this installation. Upstream pstack bodies named them; the
-  local `patches/pi-pstack-models.sh` rewrites them to role references.
-- In pstack skills, pass `pstack:<role>` and let the adapter resolve the model and thinking. Never
-  pass a panel role (`arena-runners`, `arena-cross-judge-pool`, `architect-runners`,
-  `interrogate-reviewers`) as a model; expand the panel into its seats.
+  `cursor-grok-*`. They do not exist in this installation.
 - An ad-hoc fan-out that wants model diversity picks from the allowed list only. Do not reach into
   a provider catalog for a "different family". The families available here are `glm`, `deepseek`,
   `minimax`, and `ling`.
