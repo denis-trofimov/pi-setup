@@ -52,7 +52,9 @@
 // Границы названы честно: разбор команд строковый и не знает экранирования вложенного шелла
 // (`bash -c '…'`). Ложное срабатывание лечится обходом, а не правкой правила на ходу.
 
-import { readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 
 /** Порог «файл больше 50 КБ»: такой файл через `sed -n`/`cat` читать разрешено (51200 байт). */
 const READ_LIMIT_BYTES = 51200;
@@ -126,6 +128,9 @@ const SLEEP_UNIT_SECONDS = { "": 1, s: 1, m: 60, h: 3600, d: 86400 };
 /** `sleep` длиннее этого — ожидание прогона, а не пауза (#16149). */
 const SLEEP_MAX_SECONDS = 30;
 
+/** Указатель на каталог git: `gitdir: /path/.git/worktrees/<имя>` — так `.git` выглядит в воркдереве. */
+const GITDIR_POINTER = /^gitdir:\s*(.+)$/m;
+
 /**
  * Слова сегмента: кавычки снимаются, перенаправления остаются отдельными словами.
  *
@@ -171,6 +176,82 @@ function probeFile(path) {
 function readsSmallFile(path) {
 	const probe = probeFile(path);
 	return probe === null || probe.size <= READ_LIMIT_BYTES;
+}
+
+/**
+ * Факты о каталоге для вызова, который состоял только из `cd` (#87 п.1).
+ *
+ * Переход писали ради ответа «где я, какая ветка, есть ли правки», а сторож отдавал пустой отказ
+ * одиннадцать раз за сессию. `git` здесь не запускается: ветку даёт `.git/HEAD`, наличие репозитория —
+ * сам `.git`, а состояние правок агент получает готовой строкой. Запуск `git` из сторожа стоил бы
+ * секунды на каждом вызове в большом репозитории и дал бы новую причину зависания (ADR 0001).
+ *
+ * @param {string | null} target каталог из `cd`, либо null — текущий каталог процесса
+ * @returns {string[]}
+ */
+function directoryFacts(target) {
+	if (target !== null && /[$`]/.test(target)) {
+		return [`каталог \`${target}\` не раскрыт — подставьте путь в строку ниже сами`];
+	}
+	const dir = resolve(process.cwd(), (target ?? ".").replace(/^~(?=\/|$)/, homedir()));
+	if (!existsSync(dir)) return [`каталога \`${dir}\` нет`];
+
+	let head = "";
+	const dotGit = join(dir, ".git");
+	try {
+		head = readFileSync(join(dotGit, "HEAD"), "utf8").trim();
+	} catch {
+		// `.git` файлом — это воркдерево: HEAD лежит по указателю из этого файла.
+		try {
+			const pointer = readFileSync(dotGit, "utf8").match(GITDIR_POINTER);
+			if (pointer === null) return [`\`.git\` в \`${dir}\` — файл без указателя gitdir`];
+			head = readFileSync(join(resolve(dir, pointer[1].trim()), "HEAD"), "utf8").trim();
+		} catch {
+			return [`\`.git\` в \`${dir}\` нет — это не репозиторий`];
+		}
+	}
+
+	const branch = head.match(/^ref:\s*refs\/heads\/(.+)$/);
+	return [
+		branch === null ? `HEAD отделён от ветки: \`${head.slice(0, 12)}\`` : `ветка: \`${branch[1]}\``,
+		`состояние правок — \`git -C ${dir} status --short --branch\``,
+	];
+}
+
+/**
+ * Каталог, в который переходят `cd`-сегменты: последний переход выигрывает, как в shell.
+ *
+ * @param {string[]} segments
+ * @returns {string | null}
+ */
+function cdTarget(segments) {
+	let target = null;
+	for (const segment of segments) {
+		const text = unwrapped(segment);
+		if (!CD_SEGMENT.test(text)) continue;
+		const parts = words(text);
+		if (parts[0] === "cd" && parts[1] !== undefined) target = parts[1];
+	}
+	return target;
+}
+
+/**
+ * Отфильтрованный список веток: `--list '<шаблон>'` или `--list=<шаблон>` (#86).
+ *
+ * `--list` без шаблона печатает весь список — правило прежнее. Шаблон отдельным словом или в самом
+ * флаге — это фильтр, и отказ на нём стоил двух ходов в сессии #16129.
+ *
+ * @param {string} segment
+ * @returns {boolean}
+ */
+function branchListFiltered(segment) {
+	const tokens = words(segment);
+	const index = tokens.findIndex((token) => token === "--list" || token.startsWith("--list="));
+	if (index === -1) return false;
+	const token = tokens[index];
+	if (token.startsWith("--list=")) return token.length > "--list=".length;
+	const next = tokens[index + 1];
+	return next !== undefined && !isFlag(next);
 }
 
 /** Операнды сегмента: без флагов, без heredoc-меток и перенаправлений. */
@@ -524,7 +605,10 @@ export function classifyCall(command, options = {}) {
 		return {
 			allowed: false,
 			reason: "Вызов без цели: после `cd` и `;` не остаётся команды, которая что-то делает.",
-			hint: "Такой вызов возвращает пустой вывод и ничего не проверяет. Нужен переход ради пути — используйте абсолютный путь в самой команде (`git -C <abs>`, `make -C <abs>`).",
+			hint: [
+				...directoryFacts(cdTarget(segments)),
+				"Переход сам по себе ничего не проверяет. Дальше — либо абсолютный путь в самой команде (`git -C <abs>`, `make -C <abs>`), либо строка из подсказки выше.",
+			].join("\n"),
 		};
 	}
 
@@ -539,7 +623,12 @@ export function classifyCall(command, options = {}) {
 			return {
 				allowed: false,
 				reason: "Конвейер в `head`/`tail` и голый `$?` после него: код возврата приходит от `tail`, а не от команды.",
-				hint: "Гейт стоит на форме вызова, а не на смысле: 22 таких чтения за одну сессию (#16087), и одно ушло в трекер как вывод о коде. Либо уберите конвейер, либо берите код из `PIPESTATUS` (первая ступень). С `set -o pipefail` в этой же команде `$?` верен и вызов проходит.",
+				hint: [
+					`Заблокирован сегмент \`${segments[trimIndex].trim()}\` — команда не выполнена целиком, остальные её сегменты тоже.`,
+					`Готовая строка, которую сторож пропускает: \`set -o pipefail; ${trimmed}\``,
+					"Код первой ступени в обход правила — `echo \"exit=${PIPESTATUS[0]}\"` вместо голого `$?`.",
+					"Гейт стоит на форме вызова, а не на смысле: 22 таких чтения за одну сессию (#16087), и одно ушло в трекер как вывод о коде.",
+				].join("\n"),
 			};
 		}
 	}
@@ -572,7 +661,7 @@ export function classifyCall(command, options = {}) {
 			};
 		}
 
-		if (GIT_BRANCH_LISTING.test(segment)) {
+		if (GIT_BRANCH_LISTING.test(segment) && !branchListFiltered(segment)) {
 			return {
 				allowed: false,
 				reason: "Вывод `git branch` без фильтра: список веток всего репозитория (2168 строк, 50 КБ).",
