@@ -570,6 +570,25 @@ The check runs from a fixture in `tests/pi-subagents-task-required.sh`; on a mac
 installed it also calls the validator and proves that `{ agent }`, `{ agent, task: "   " }` are
 rejected and `{ agent, task }` still passes.
 
+### `pi-fff`: a path outside the index is named, not searched
+
+`ffgrep` with a `path` that git ignores — `runtime/detached/<id>/log` in msb-lk — answered with
+matches from `AGENTS.md`, `Makefile` and `scripts/ci/…` (#16200). Nothing about the output said the
+requested file was never read: paths and line numbers, like any other page of results, so the answer
+was taken as fact about other files. The path is not in the index, the constrained query matched
+nothing, and the tool fell through to its fuzzy fallback over the whole repository.
+
+`patches/pi-fff-ignored-path.sh` makes the case explicit: a path that exists on disk but is
+git-ignored is reported as `outside the index`, with the three ways to read it — `includeIgnored:
+true`, `rg <pattern> <path>`, `read` with offset. `includeIgnored: true` scans that single path from
+disk (`tests/pi-fff-ignored-path.sh` checks the patch mechanics; the scan itself is not runnable in
+CI, where neither the package nor its Pi dependencies are installed):
+
+```bash
+./patches/pi-fff-ignored-path.sh --check     # exit 1 if the patch is missing
+./patches/pi-fff-ignored-path.sh             # apply (install.sh does it too)
+```
+
 ## Voice dictation (Handy + Micme)
 
 `alt+m` toggles dictation inside Pi. Audio is recorded with `ffmpeg`, transcribed by the local [Handy](https://handy.computer) CLI, and appended to the focused editor for review — no cloud STT, no API key.
