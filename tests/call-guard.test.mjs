@@ -12,7 +12,7 @@
 // #15749 п.5 (`git branch -a` → 2168 строк, 50 КБ).
 
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -183,7 +183,6 @@ const subdir = join(fixtures, "src");
 writeFileSync(smallFile, "x".repeat(2048));
 writeFileSync(bigFile, "x".repeat(51201));
 writeFileSync(join(fixtures, "keep.txt"), "y");
-const { mkdirSync } = await import("node:fs");
 mkdirSync(subdir, { recursive: true });
 writeFileSync(join(subdir, "file.php"), "x");
 test.after(() => rmSync(fixtures, { recursive: true, force: true }));
@@ -407,4 +406,65 @@ test("настоящие команды bash именем тула не заде
 	]) {
 		assert.equal(classifyCall(command).allowed, true, command);
 	}
+});
+
+// Отфильтрованный список веток (#86). `git branch --list '<шаблон>'` возвращает только совпавшие
+// ветки, а сторож отказывал: альтернатива `--list` в правиле не смотрела, есть ли за ней шаблон.
+// В сессии #16129 это стоило двух ходов. Пример из выпуска (`… | wc -l`) проходил и до правки —
+// один сегмент с фильтром, — поэтому расширено именно на форму `--list` с шаблоном.
+test("git branch --list с шаблоном проходит, без шаблона блокируется", () => {
+	for (const command of [
+		"git branch --list 'fix/*'",
+		"git branch --list fix/16129*",
+		"git branch --list='fix/*'",
+		"git -C /repo branch --list 'fix/16129*'",
+	]) {
+		assert.equal(classifyCall(command).allowed, true, command);
+	}
+	for (const command of ["git branch --list", "git branch --all", "git branch --list --format='%(refname)'"]) {
+		const verdict = classifyCall(command);
+		assert.equal(verdict.allowed, false, command);
+		assert.match(verdict.reason, /git branch/, command);
+	}
+});
+
+// Факты о каталоге (#87 п.1): переход писали ради ответа «где я и какая ветка», а отказ возвращал
+// пустую строку — одиннадцать таких отказов за сессию `01a21957`. Ветку даёт `.git/HEAD`, состояние
+// правок — готовая строка, `git` из сторожа не запускается (ADR 0001).
+test("вызов из одного cd отдаёт ветку, наличие .git и готовую строку состояния", () => {
+	const repo = mkdtempSync(join(tmpdir(), "guard-cd-repo-"));
+	mkdirSync(join(repo, ".git"), { recursive: true });
+	writeFileSync(join(repo, ".git", "HEAD"), "ref: refs/heads/fix/42-guard\n");
+
+	const outer = mkdtempSync(join(tmpdir(), "guard-cd-outer-"));
+	writeFileSync(join(outer, ".git"), `gitdir: ${join(repo, ".git")}\n`);
+
+	const plain = mkdtempSync(join(tmpdir(), "guard-cd-plain-"));
+	test.after(() => {
+		for (const path of [repo, outer, plain]) rmSync(path, { recursive: true, force: true });
+	});
+
+	const inRepo = classifyCall(`cd ${repo} 2>/dev/null`);
+	assert.equal(inRepo.allowed, false);
+	assert.match(inRepo.hint, /ветка: `fix\/42-guard`/);
+	assert.ok(inRepo.hint.includes(`git -C ${repo} status --short --branch`), inRepo.hint);
+
+	// `.git` файлом — воркдерево: ветка читается по указателю gitdir.
+	assert.match(classifyCall(`cd ${outer}; true`).hint, /ветка: `fix\/42-guard`/);
+
+	assert.match(classifyCall(`cd ${plain}; :`).hint, /нет — это не репозиторий/);
+	assert.match(classifyCall(`cd ${join(tmpdir(), "guard-cd-нет-такого")}; :`).hint, /каталога .* нет/);
+});
+
+// Готовая замена в отказе на конвейер (#66 пп.2–3, #87 п.3). Следующий вызов должен быть копией
+// строки из отказа, а не переписыванием заново: пять таких отказов за сессию `01a21957`, и каждый
+// раз команда сочинялась заново, а соседние сегменты (`git push` рядом с конвейером) не выполнялись.
+test("отказ на конвейер называет сегмент и печатает строку, которую сторож пропускает", () => {
+	const command = 'make lint-ci > /tmp/log 2>&1; rg -l x . | head -3; echo "exit=$?"';
+	const verdict = classifyCall(command);
+	assert.equal(verdict.allowed, false);
+	assert.match(verdict.hint, /Заблокирован сегмент `rg -l x \. \| head -3`/);
+	assert.ok(verdict.hint.includes(`set -o pipefail; ${command}`), verdict.hint);
+	assert.equal(classifyCall(`set -o pipefail; ${command}`).allowed, true, "строка из отказа проходит");
+	assert.match(verdict.hint, /PIPESTATUS/);
 });
