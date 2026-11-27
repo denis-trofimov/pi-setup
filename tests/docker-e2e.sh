@@ -214,17 +214,17 @@ grep -q '"defaultModel"' /root/.pi/agent/settings.json
 printf "\nVERIFY MODEL CAP\n"
 jq -e ".subagents.modelScope.enforce == true" /root/.pi/agent/settings.json >/dev/null
 jq -e ".subagents.modelScope.strict == false" /root/.pi/agent/settings.json >/dev/null
-jq -e ".subagents.modelScope.allow | length == 14" /root/.pi/agent/settings.json >/dev/null
-jq -e ".subagents.defaultModel == \"openrouter/z-ai/glm-5.3-flash\"" /root/.pi/agent/settings.json >/dev/null
+jq -e ".subagents.modelScope.allow | length == 21" /root/.pi/agent/settings.json >/dev/null
+jq -e ".subagents.defaultModel == \"routerai/z-ai/glm-5.3-flash\"" /root/.pi/agent/settings.json >/dev/null
 jq -e ".subagents.modelScope as \$s | [\$s.agents[] | .allow[]] - \$s.allow | length == 0" /root/.pi/agent/settings.json >/dev/null
 jq -e "[.subagents.agentOverrides | keys[]] | (index(\"reviewer\") != null and index(\"oracle\") != null and index(\"evidence-auditor\") != null and index(\"uat-browser\") != null)" /root/.pi/agent/settings.json >/dev/null
-# Rows of the allowed table: first cell is a provider-qualified id. The old
-# pattern expected "<price> / ..." in the second cell and matched nothing even
-# before the table moved out of AGENTS.md (#15647).
+# Rows of the allowed table: 14 `openrouter/` ids plus the 7 `routerai/` mirrors the
+# local catalog serves. The normalization in validate_models (sync.sh) compares
+# bare slugs, so both prefixes match the same 14-slug policy.
 # Quoting: this whole block is one `bash -lc '...'` string, so a literal single
 # quote has to leave and re-enter it as '\'' — otherwise the backticks run on
 # the HOST and the container gets a mangled pattern.
-test "$(grep -cE '\''^\| `[^`]+/[^`]+`'\'' /root/.pi/agent/docs/delegation-models.md)" -eq 14
+test "$(grep -cE '\''^\| `[^`]+/[^`]+`'\'' /root/.pi/agent/docs/delegation-models.md)" -eq 21
 grep -qi "model cap" /root/.pi/agent/AGENTS.md
 grep -q "docs/delegation-models.md" /root/.pi/agent/AGENTS.md
 # Session-log recipes ship with the skills that point at them: the page must be
@@ -234,8 +234,8 @@ test -f /root/.pi/agent/docs/session-logs.md
 grep -q "docs/session-logs.md" /root/.pi/agent/AGENTS.md
 grep -q "docs/session-logs.md" /root/.pi/agent/skills/retro/SKILL.md
 test -L /root/.local/bin/pi-models-check
-test "$(/root/.local/bin/pi-models-check --list | wc -l)" -eq 14
-echo "model cap ok (14 ids, adapter roles inside the allow list, delegation-models table matches)"
+test "$(/root/.local/bin/pi-models-check --list | wc -l)" -eq 21
+echo "model cap ok (21 allow entries = 14 ids + 7 routerai mirrors, per-agent allow lists inside the global one, delegation-models table matches)"
 
 printf "\nVERIFY RU-SPELLCHECK\n"
 test -L /root/.local/bin/ru-spellcheck

@@ -17,27 +17,54 @@ from that table are policy — a model in the local catalog is not evidence the 
   the cap: it returns 404 from the guardrail, not from the model. This is what broke the project
   reviewer once already.
 - `google/*`, any `gemini-*` id; `openai/*`, any `gpt-*`, `o3`, `o4` id; `anthropic/*`.
-- Every `routerai/...` id, including the ones whose name matches an allowed id. The cap covers
-  OpenRouter only, so routerai models are outside the policy even when they answer.
+- Every `routerai/...` id that has no allowed counterpart. Each `routerai/…` id is a separate entry
+  in `modelScope.allow` for the same bare slug — an `openrouter/` entry does not authorise it, and
+  vice versa — see "Mirror on a machine without OpenRouter" below. An id that answers `curl` is
+  still outside the policy unless the table in `~/.pi/agent/docs/delegation-models.md` carries its
+  bare slug.
 
 Never delegate to a blocked model, never retry one after it fails, and never offer one as an
 option. Anything outside the table needs the user's explicit approval first.
+
+## Mirror on a machine without OpenRouter
+
+The gate compares the full `provider/id`, so an id is allowed only under the provider written in
+`modelScope.allow`. A machine whose registry has no `openrouter` provider at all — no
+`OPENROUTER_API_KEY`, empty `auth.json`, catalog under `providers.routerai` — reaches 7 of the 14
+ids through RouterAI under the same bare slug, and nothing else; naming `openrouter/…` there fails
+with `Unknown subagent model` before a request goes out, and `pi-models-check` reports
+`no API key for provider openrouter` for all 14.
+
+On such a machine the allow list carries the 14 `openrouter/` ids **plus** a `routerai/` mirror of
+every id the local catalog serves (21 entries), `subagents.defaultModel` and every
+`agentOverrides.<name>.model` name the `routerai/` form, and `strict: true` stays on. The mirror is
+an id form, not a wider policy: a `routerai/` id without an allowed counterpart stays blocked, and
+the check that keeps the two repo copies of the list in step (`sync.sh` → `validate_models`)
+compares bare slugs, so both prefixes match the same table row. Prices are not the OpenRouter ones:
+the routerai rates sit in `providers.routerai.models[].cost` of the live `models.json`.
+
+The startup model `~deepseek/deepseek-v4-flash-latest` is not in the allow list and is not a
+delegation target, so `inherit` is rejected there under `strict: true`: a workflow on such a machine
+has to name a model or rely on `agentOverrides`.
 
 ## Enforcement
 
 One hard gate, in user config; do not weaken it without the user asking.
 
-- `~/.pi/agent/settings.json` — `subagents.modelScope` is `enforce: true, strict: true` with the 14
-  ids as the allow list, so any launch naming a model outside the cap is rejected before the child
-  starts, whoever started it (workflow or a bare `subagent` call). The repo example
-  ships the same list with `strict: false`, so a machine whose cap differs still launches instead of
-  refusing every call.
-- `subagents.defaultModel` is `openrouter/z-ai/glm-5.3-flash` and every bundled agent has an
-  explicit `agentOverrides.<name>.model`, so a call that names no model lands on a capped model
-  instead of the parent's. `inherit` passes only while the parent session model is itself inside
-  the cap, which is the intended behaviour, not an exemption. For `reviewer` the override is
-  `deepseek-v4.1-flash-1017`, and it is the only deepseek variant its allow list accepts: naming
-  `openrouter/deepseek/deepseek-v4.1-flash` (no `-1017`) passes the cap and fails the gate.
+- `~/.pi/agent/settings.json` — `subagents.modelScope` is `enforce: true, strict: true` with the
+  allowed ids as the allow list — 14 `openrouter/` entries plus the `routerai/` mirror wherever the
+  local provider serves the same bare slug (21 on an OpenRouter-less machine, see above) — so any
+  launch naming a model outside the cap is rejected before the child starts, whoever started it
+  (workflow or a bare `subagent` call). The repo example ships the same list with `strict: false`,
+  so a machine whose cap differs still launches instead of refusing every call.
+- `subagents.defaultModel` is `routerai/z-ai/glm-5.3-flash` on an OpenRouter-less machine and
+  `openrouter/z-ai/glm-5.3-flash` where OpenRouter is configured — the same upstream model — and
+  every bundled agent has an explicit `agentOverrides.<name>.model`, so a call that names no model
+  lands on a capped model instead of the parent's. `inherit` passes only while the parent session
+  model is itself inside the cap, which is the intended behaviour, not an exemption. For `reviewer`
+  the override is `deepseek-v4.1-flash-1017`, and it is the only deepseek variant its allow list
+  accepts: naming `deepseek/deepseek-v4.1-flash` (no `-1017`) passes the cap and fails the gate,
+  under either provider prefix.
 - `reviewer`, `oracle`, and `evidence-auditor` all default to `deepseek-v4.1-flash-1017`, and
   additionally carry a per-agent allow list, so a review cannot escalate to `glm-5.2`. Thinking:
   `reviewer` and `oracle` at `high`, `evidence-auditor` at `off` (matching a claim against a fetched
@@ -46,18 +73,20 @@ One hard gate, in user config; do not weaken it without the user asking.
   seat. `oracle` and `evidence-auditor` also allow `glm-5.3` for a review that has to be argued at
   full strength.
 - **`medium` does not exist on most allowed models, and Pi clamps it UP first, never down.**
-  `deepseek-v4.1-flash-1017` and `deepseek-v4-flash-vision-exp` expose `off/low/high/max`;
-  `glm-5.3` and `glm-5.3-flash` expose only `low/high/max` (no `off` — there the floor is 2048
-  tokens, not zero); `z-ai/glm-5.2` exposes only `off/high/xhigh`, so even `low` becomes `high`.
-  `clampThinkingLevel` (pi-ai `dist/models.js`) scans upward from the requested level and falls back
-  down only when nothing above it exists, so a `medium` override on those ids silently buys the
-  16384-token `high` budget instead of 8192, and nothing surfaces it. Levels per seat must be levels
-  the model actually has: `medium` is real only on `minimax-m3`, `minimax-m3.1-flash`, `ling-3.*`,
-  `glm-4.7-flash`, `glm-5`, and `glm-5.1`. For the six ids with no `thinkingLevelMap` the catalog
-  proves only that nothing clamps: Pi forwards the raw level unchecked. An `off` pin holds only
-  while the seat stays on a model that maps it — `evidence-auditor` may also name `glm-5.3-flash`,
-  where `off` becomes `low`. Verify by running the configured pairs through `clampThinkingLevel`,
-  not by reading the number you wrote.
+  Under `openrouter/` the per-model levels are: `deepseek-v4.1-flash-1017` and
+  `deepseek-v4-flash-vision-exp` expose `off/low/high/max`; `glm-5.3` and `glm-5.3-flash` expose
+  only `low/high/max` (no `off` — there the floor is 2048 tokens, not zero); `z-ai/glm-5.2`
+  exposes only `off/high/xhigh`, so even `low` becomes `high`. `clampThinkingLevel` (pi-ai
+  `dist/models.js`) scans upward from the requested level and falls back down only when nothing
+  above it exists, so a `medium` override on those ids silently buys the 16384-token `high` budget
+  instead of 8192, and nothing surfaces it. Levels per seat must be levels the model actually has:
+  `medium` is real only on `minimax-m3`, `minimax-m3.1-flash`, `ling-3.*`, `glm-4.7-flash`,
+  `glm-5`, and `glm-5.1`. Under `routerai/` no mirror row carries a `thinkingLevelMap`
+  (`providers.routerai.models[]` in the live `models.json`), so nothing clamps and the catalog
+  proves only that the raw level is forwarded: `off` stays `off`, `medium` stays `medium`. An `off`
+  pin therefore holds only while the seat stays on a model that maps it — on the `openrouter/`
+  form, `evidence-auditor` may also name `glm-5.3-flash`, where `off` becomes `low`. Verify by
+  running the configured pairs through `clampThinkingLevel`, not by reading the number you wrote.
 - The table in `~/.pi/agent/docs/delegation-models.md` is a dated observation, not a standing
   fact. Re-verify it with `pi-models-check` (one `max_tokens: 1` request per id, exit 1 on 404)
   before trusting it after a provider or guardrail change. A 404 there is the cap, not local config.
