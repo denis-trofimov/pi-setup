@@ -24,6 +24,8 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 clone="$WORK/clone"
 git clone -q --no-hardlinks "$ROOT" "$clone"
 cp "$ROOT"/install.sh "$ROOT"/sync.sh "$clone"/
+# Список замен — тот же случай, что install.sh: клон несёт закоммиченное, а проверяется рабочее дерево.
+cp "$ROOT"/config/ru-spellcheck/deny-rewrites.txt "$clone/config/ru-spellcheck/"
 git -C "$clone" config user.email "restore-policy@example.invalid"
 git -C "$clone" config user.name "restore policy test"
 mkdir -p "$clone/scripts/lib"
@@ -36,6 +38,9 @@ mkdir -p "$pi_home/docs" "$home/.config/ru-spellcheck" "$bin"
 cp "$clone/config/settings.example.json" "$pi_home/settings.json"
 cp "$clone/config/ru-spellcheck/allow.txt" "$home/.config/ru-spellcheck/allow.txt"
 cp "$clone/config/ru-spellcheck/deny.txt" "$home/.config/ru-spellcheck/deny.txt"
+cp "$clone/config/ru-spellcheck/deny-rewrites.txt" "$home/.config/ru-spellcheck/deny-rewrites.txt"
+# Живая копия замен несёт правку, которой в репозитории нет: restore обязан её перезаписать.
+printf 'живое-слово -> живая-замена\n' >> "$home/.config/ru-spellcheck/deny-rewrites.txt"
 
 # Живая копия несёт собственную правку в каждом из трёх файлов политики.
 printf 'live-only AGENTS line\n' >> "$pi_home/docs/delegation-models.md"
@@ -62,6 +67,8 @@ cmp -s "$clone/config/delegation-models.md" "$pi_home/docs/delegation-models.md"
   || fail "docs/delegation-models.md не перезаписан, хотя restore перезаписывает его всегда"
 cmp -s "$clone/config/session-logs.md" "$pi_home/docs/session-logs.md" \
   || fail "docs/session-logs.md не перезаписан, хотя restore перезаписывает его всегда"
+cmp -s "$clone/config/ru-spellcheck/deny-rewrites.txt" "$home/.config/ru-spellcheck/deny-rewrites.txt" \
+  || fail "deny-rewrites.txt: restore не перезаписал живую копию версией репозитория"
 
 # (2) Пропуск назван в конце прогона: последние строки — сводка, а не только «Done.».
 tail -n 12 "$log1" | grep -q "Не восстановлено из репозитория" \
@@ -75,4 +82,4 @@ run_restore "$log2" "--copy-config"
 cmp -s "$clone/config/AGENTS.md" "$pi_home/AGENTS.md" \
   || fail "restore --copy-config не забрал config/AGENTS.md"
 
-echo "OK: restore оставляет живой AGENTS.md, перезаписывает docs/* и называет пропуск в сводке"
+echo "OK: restore оставляет живой AGENTS.md, перезаписывает docs/* и deny-rewrites, называет пропуск в сводке"
