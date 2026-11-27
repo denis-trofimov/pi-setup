@@ -304,7 +304,72 @@ test("несколько файлов в cat и grep содержимое не �
 	assert.doesNotMatch(excerptOf(`grep -n needle ${smallFile} ${excerptFile}`), /повторный вызов не нужен/);
 });
 
-test("конвейер в head/tail и голый `$?` после него блокируется — замер #16096 п.1", () => {
+// --- #95: BRE-шаблон давал ложное «совпадений нет» ---
+// В ретро #16200 два отказа вернули «в файле нет» на `grep -n "putenv\|tearDown" файл`, где
+// совпадение стояло в файле: шаблон повторялся через `new RegExp`, а в JS `\|` — литерал `|`.
+test("BRE-шаблон grep находит то, что grep считает альтернацией", () => {
+	const file = join(fixtures, "bre.php");
+	writeFileSync(file, ["class T {", "\tputenv('X=1');", "\ttearDown();", "}"].join("\n"));
+
+	const found = excerptOf(`grep -n "putenv\\|tearDown" ${file}`);
+	assert.match(found, /putenv/);
+	assert.match(found, /tearDown/);
+	assert.doesNotMatch(found, /совпадений .* в файле нет/);
+
+	// Файл без совпадений — по-прежнему «нет»: два факта различаются.
+	const empty = excerptOf(`grep -n "zzz\\|yyy" ${file}`);
+	assert.match(empty, /совпадений «zzz\\|yyy» в файле нет/);
+});
+
+test("неразобранный шаблон говорит «не разобран», а не «совпадений нет»", () => {
+	const file = join(fixtures, "bre.php");
+	const verdict = excerptOf(`grep -n "a(" ${file}`);
+	assert.match(verdict, /не разобран как регулярное выражение/);
+});
+
+// --- #101 п.1: относительный путь резолвился от cwd процесса, а не от `cd` ---
+test("относительный операнд резолвится от `cd`, а не от cwd процесса", () => {
+	const decoy = mkdtempSync(join(tmpdir(), "guard-decoy-"));
+	const target = mkdtempSync(join(tmpdir(), "guard-target-"));
+	const previous = process.cwd();
+	writeFileSync(join(decoy, "probe.txt"), "MAIN-TREE-CONTENT\n");
+	writeFileSync(join(target, "probe.txt"), "WORKTREE-CONTENT\n");
+
+	try {
+		// Файл с тем же именем в cwd сессии — именно он попадал в отказ до правки.
+		process.chdir(decoy);
+		const verdict = excerptOf(`cd ${target} && sed -n '1,2p' probe.txt`);
+		assert.match(verdict, /WORKTREE-CONTENT/);
+		assert.doesNotMatch(verdict, /MAIN-TREE-CONTENT/);
+
+		// Неразвёрнутый `cd` ($VAR) содержимого не отдаёт вовсе — гадать о каталоге нельзя.
+		const unresolved = excerptOf("cd $WORKSPACE && cat probe.txt");
+		assert.doesNotMatch(unresolved, /MAIN-TREE-CONTENT/);
+	} finally {
+		process.chdir(previous);
+		rmSync(decoy, { recursive: true, force: true });
+		rmSync(target, { recursive: true, force: true });
+	}
+});
+
+// --- #101 п.2: правило срабатывало на текст внутри heredoc ---
+test("тело heredoc — данные, а не команда: публикация с примером не блокируется", () => {
+	const command = [
+		"gh issue create --body-file /tmp/body.md <<'EOF'",
+		"Воспроизведение:",
+		`cat ${join(fixtures, "bre.php")}`,
+		`sed -i 's/a/b/' ${join(fixtures, "bre.php")}`,
+		"EOF",
+	].join("\n");
+	assert.equal(classifyCall(command).allowed, true);
+
+	// Та же команда без heredoc — обычный отказ: правило на месте.
+	assert.equal(classifyCall(`cat ${join(fixtures, "bre.php")}`).allowed, false);
+});
+
+// #102: отказ заменён исправлением. Правило держит код `tail` вместо кода команды, и
+// `set -o pipefail` снимает саму причину — отказ стоил хода шесть раз за одну сессию.
+test("конвейер в head/tail и голый `$?` исправляется, а не блокируется — #102 п.1", () => {
 	// Двадцать два таких чтения за одну сессию (#16087); одно ушло в трекер: «абсолютный путь к .pi/
 	// работает» было итогом `rg -l … /abs/.pi/ | head -3; echo "exit=$?"`, где 0 пришёл от head.
 	const commands = [
@@ -315,10 +380,21 @@ test("конвейер в head/tail и голый `$?` после него бл�
 	];
 	for (const command of commands) {
 		const verdict = classifyCall(command);
-		assert.equal(verdict.allowed, false, command);
-		assert.match(verdict.reason, /код возврата приходит от `tail`/, command);
-		assert.match(verdict.hint, /PIPESTATUS/, command);
+		assert.equal(verdict.allowed, true, command);
+		assert.ok(verdict.patchedCommand.endsWith(`set -o pipefail; ${command}`), verdict.patchedCommand);
+		assert.match(verdict.note, /set -o pipefail/, command);
+		assert.match(verdict.note, /первой ступени/, command);
 	}
+});
+
+// Отказ остаётся там, где подстановка в начало меняет смысл: код читает подстановка, а не конвейер.
+test("`$?` внутри `$( … )` по-прежнему отказ", () => {
+	// Настоящий вид ловушки: код печатает сама подстановка, и `pipefail` в начало строки
+	// сюда не доходит смыслом — отказ оставлен (§ #102 п.1 «что сделать»).
+	const verdict = classifyCall("x=$(make test | tail -3; echo $?)");
+	assert.equal(verdict.allowed, false);
+	assert.match(verdict.reason, /внутри `\$\( … \)`/);
+	assert.match(verdict.hint, /PIPESTATUS/);
 });
 
 test("код возврата берётся законно: PIPESTATUS, без конвейера, с pipefail", () => {
@@ -340,9 +416,11 @@ test("код возврата берётся законно: PIPESTATUS, без 
 });
 
 test("pipefail учитывается только своим сегментом `set`, а не упоминанием в тексте", () => {
-	// `echo 'set -o pipefail'` не включает pipefail, поэтому `$?` после конвейера по-прежнему врёт.
-	const verdict = classifyCall("echo 'set -o pipefail'; cmd | tail -3; echo $?");
-	assert.equal(verdict.allowed, false);
+	// `echo 'set -o pipefail'` не включает pipefail, поэтому сторож подставляет его сам (#102).
+	const command = "echo 'set -o pipefail'; cmd | tail -3; echo $?";
+	const verdict = classifyCall(command);
+	assert.equal(verdict.allowed, true);
+	assert.ok(verdict.patchedCommand.endsWith(`set -o pipefail; ${command}`), verdict.patchedCommand);
 });
 
 // Имя инструмента pi, набранное как команда bash (#16126): в сессии #16110 дважды вернулось
@@ -456,15 +534,54 @@ test("вызов из одного cd отдаёт ветку, наличие .g
 	assert.match(classifyCall(`cd ${join(tmpdir(), "guard-cd-нет-такого")}; :`).hint, /каталога .* нет/);
 });
 
-// Готовая замена в отказе на конвейер (#66 пп.2–3, #87 п.3). Следующий вызов должен быть копией
-// строки из отказа, а не переписыванием заново: пять таких отказов за сессию `01a21957`, и каждый
-// раз команда сочинялась заново, а соседние сегменты (`git push` рядом с конвейером) не выполнялись.
-test("отказ на конвейер называет сегмент и печатает строку, которую сторож пропускает", () => {
+// Готовая строка в отказе (#66 пп.2–3, #87 п.3) больше не нужна: с #102 сторож сам подставляет
+// `set -o pipefail` и выполняет вызов. Соседние сегменты (`git push` рядом с конвейером) при этом
+// тоже выполняются — их больше не срывает отказ.
+test("вызов с конвейером и `$?` выполняется с pipefail, соседние сегменты не срываются", () => {
 	const command = 'make lint-ci > /tmp/log 2>&1; rg -l x . | head -3; echo "exit=$?"';
 	const verdict = classifyCall(command);
-	assert.equal(verdict.allowed, false);
-	assert.match(verdict.hint, /Заблокирован сегмент `rg -l x \. \| head -3`/);
-	assert.ok(verdict.hint.includes(`set -o pipefail; ${command}`), verdict.hint);
-	assert.equal(classifyCall(`set -o pipefail; ${command}`).allowed, true, "строка из отказа проходит");
-	assert.match(verdict.hint, /PIPESTATUS/);
+	assert.equal(verdict.allowed, true);
+	assert.ok(verdict.patchedCommand.endsWith(`set -o pipefail; ${command}`), verdict.patchedCommand);
+	// Готовая строка в отказе проходила — теперь проходит и сам вызов.
+	assert.equal(classifyCall(`set -o pipefail; ${command}`).allowed, true);
+});
+
+// --- #102 дефект 2: листинг каталога с тысячами записей ---
+test("ls каталога с записями выше порога режется до 20 строк и называет число", () => {
+	const big = mkdtempSync(join(tmpdir(), "guard-ls-big-"));
+	const small = mkdtempSync(join(tmpdir(), "guard-ls-small-"));
+	try {
+		for (let index = 0; index < 260; index += 1) writeFileSync(join(big, `entry-${index}.txt`), "x");
+		writeFileSync(join(small, "one.txt"), "x");
+
+		const verdict = classifyCall(`ls ${big}`);
+		assert.equal(verdict.allowed, true);
+		assert.match(verdict.note, /260 записей/);
+		assert.match(verdict.note, /первые 20/);
+		assert.ok(verdict.patchedCommand.includes(`head -20`), verdict.patchedCommand);
+
+		// Каталог ниже порога не трогается: правка нужна только там, где хвост теряет вывод.
+		assert.equal(classifyCall(`ls ${small}`).patchedCommand, undefined);
+		// Явный `| head` в команде — уже не тот случай.
+		assert.equal(classifyCall(`ls ${big} | head -5`).patchedCommand, undefined);
+	} finally {
+		rmSync(big, { recursive: true, force: true });
+		rmSync(small, { recursive: true, force: true });
+	}
+});
+
+// --- #102 дефект 3: `2>/dev/null` на cd/ls глушит опечатку в пути ---
+test("`2>/dev/null` с cd/ls/test снимается, а не глотается молча", () => {
+	for (const command of [
+		"cd /tmp 2>/dev/null && ls",
+		"ls /tmp 2>/dev/null",
+		"test -d /tmp 2>/dev/null && echo yes",
+	]) {
+		const verdict = classifyCall(command);
+		assert.equal(verdict.allowed, true, command);
+		// Замечание в stderr само называет снятое перенаправление — проверяется исполняемая часть.
+		const executed = verdict.patchedCommand.replace(/^[^;]*; /, "");
+		assert.ok(!executed.includes("/dev/null"), executed);
+		assert.match(verdict.note, /глушит ошибку пути/, command);
+	}
 });

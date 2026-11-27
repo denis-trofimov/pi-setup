@@ -39,8 +39,30 @@
 //    `tail`, а не команды. Две ошибки дали неверный вывод, одна ушла в трекер: «абсолютный путь к
 //    `.pi/` работает» было итогом команды `rg -l … /abs/.pi/ | head -3; echo "exit=$?"`. Поэтому гейт
 //    стоит на форме вызова: конвейер с `head`/`tail` (в любой ступени — он и режет вывод) и чтение
-//    `$?`/`${?}` в более позднем сегменте. Осознанный выход — `PIPESTATUS` или снятый конвейер.
-//    С `set -o pipefail` в той же команде `$?` верен — такое не блокируется.
+//    `$?`/`${?}` в более позднем сегменте. С `set -o pipefail` в той же команде `$?` верен — такое не
+//    блокируется.
+//
+//    С #102 отказ по этому правилу заменён исправлением: сторож подставляет `set -o pipefail` в начало
+//    команды и одной строкой в stderr говорит об этом. Отказ стоил хода шесть раз за одну сессию
+//    (#16219), а исправление ему не нужно: правило защищает от кода `tail`, и `pipefail` снимает саму
+//    причину. Отказ остаётся только у формы, где подстановка в начало меняет смысл, — `$?` читается
+//    внутри `$( … )`: там код принадлежит подстановке, а не конвейеру в командной строке.
+//
+// 6. **Листинг каталога без предела и глушение опечатки в пути** (#102). `ls docs` в каталоге с 2958
+//    записями отдал 50 КБ — 13 % всего вывода сессии; у `read` обрезка есть, у листинга не было.
+//    Каталог с числом записей выше порога теперь режется до 20 строк с названным числом. И
+//    `2>/dev/null` на `cd`/`ls`/`test -d` снимается: он глушит единственный сигнал о промахе в пути,
+//    после которого следующие сегменты выполняются в каталоге от предыдущего `cd`.
+//
+//    Перенаправление heredoc-тела (#101 п.2) из разбора вырезается: текст примера внутри `<<'EOF'`
+//    — это данные для команды, а не команда, и правило чтения файла не должно срабатывать на
+//    `gh issue create --body-file …` из-за примера `cat <файл>` в самом теле.
+//
+// 7. **Относительный путь резолвится от `cd`, а не от cwd сессии** (#101 п.1). `cd /воркдерево && sed -n
+//    '1,10p' файл` отдавал в отказе содержимое файла из основного дерева: `readFileSync` резолвил
+//    операнд от cwd процесса pi, а `cd` парсер отбрасывал. Содержимое чужого дерева читается как
+//    текущее состояние файла — два хода на перепроверку и `edit` по этому тексту. Теперь каталог
+//    ведётся по сегментам, и неразвёрнутый `cd` (`$VAR`) содержимого не отдаёт вовсе.
 //
 // 5. **Имя инструмента pi, набранное как команда bash** (#16126). В сессии #16110 дважды вернулось
 //    `bash: ffgrep: command not found`: тул набран в командной строке вместо вызова. Отказ называет
@@ -52,7 +74,7 @@
 // Границы названы честно: разбор команд строковый и не знает экранирования вложенного шелла
 // (`bash -c '…'`). Ложное срабатывание лечится обходом, а не правкой правила на ходу.
 
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -105,6 +127,12 @@ const PIPELINE_TRIM = /\|\s*(?:head|tail)\b/;
 const EXIT_STATUS_READ = /\$(?:\?|\{\?\})/;
 
 /**
+ * `$?` внутри подстановки: `x=$(cmd | tail …)`. `pipefail` в начало строки там не исправит ничего —
+ * код читает подстановка, и $? принадлежит ей, а не конвейеру командной строки (#102).
+ */
+const EXIT_STATUS_IN_SUBSTITUTION = /\$\([^()]*\$(?:\?|\{\?\})[^()]*\)/;
+
+/**
  * Сегмент включает `pipefail`: `set -o pipefail`, `set -euo pipefail`, `set -eu -o pipefail`.
  *
  * Только `set` в начале сегмента: упоминание флага в тексте (`rg 'set -o pipefail' docs`) не делает
@@ -130,6 +158,156 @@ const SLEEP_MAX_SECONDS = 30;
 
 /** Указатель на каталог git: `gitdir: /path/.git/worktrees/<имя>` — так `.git` выглядит в воркдереве. */
 const GITDIR_POINTER = /^gitdir:\s*(.+)$/m;
+
+/**
+ * Начало heredoc: `<<EOF`, `<<'EOF'`, `<<-"EOF"`. Имя — слово без кавычек в захвате 2.
+ *
+ * Тело heredoc — данные для команды, а не команда (#101 п.2): правило чтения файла срабатывало на
+ * пример `cat <файл>` внутри тела и блокировало `gh issue create --body-file …`, публикацию issue по
+ * тому самому дефекту.
+ */
+const HEREDOC_START = /<<(-?)\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\2/;
+
+/** Каталог с числом записей больше этого сторож режет до `LISTING_MAX_LINES` строк (#102). */
+const LISTING_MAX_ENTRIES = 200;
+const LISTING_MAX_LINES = 20;
+
+/** Простой листинг каталога без конвейера и флагов: единственный вид, который переписывается безопасно. */
+const PLAIN_LS = /^ls\s+([^|;&<>\s]+)\s*$/;
+
+/** Перенаправление stderr в никуда: на `cd`/`ls`/`test -d` оно глушит опечатку в пути (#102). */
+const STDERR_SILENCED = /\s*2>\s*\/dev\/null/;
+
+/** `cd <цель>` вместе с перенаправлениями — цель нужна, чтобы резолвить относительные операнды. */
+const CD_ONLY = /^cd\s+(?:"[^"]*"|'[^']*'|\S+)/;
+
+/**
+ * Вырезать тела heredoc из команды перед разбором (#101 п.2).
+ *
+ * Строки тела заменяются пустыми: границы heredoc остаются на месте (неразрывность строк важна
+ * для номера строки, но не для разбора), а содержимое больше не считается командами.
+ * Незакрытый heredoc оставляет текст как есть — обрезать по догадке значило бы потерять команду.
+ *
+ * @param {string} command
+ * @returns {string}
+ */
+export function stripHeredocBodies(command) {
+	const lines = command.split("\n");
+	const kept = [];
+
+	for (let index = 0; index < lines.length; index += 1) {
+		const line = lines[index];
+		kept.push(line);
+		const start = HEREDOC_START.exec(line);
+		if (start === null || line.indexOf("<<<") !== -1) continue;
+		const marker = start[3];
+		const allowTabs = start[1] === "-";
+		let end = index + 1;
+		for (; end < lines.length; end += 1) {
+			const candidate = allowTabs ? lines[end].replace(/^\t+/, "") : lines[end];
+			if (candidate.trimEnd() === marker) break;
+		}
+		if (end >= lines.length) return command;
+		// Тело — данные: место под него остаётся пустым, терминатор остаётся как маркер.
+		for (let body = index + 1; body < end; body += 1) kept.push("");
+		kept.push(lines[end]);
+		index = end;
+	}
+
+	return kept.join("\n");
+}
+
+/**
+ * Абсолютный путь операнда: от каталога вызова, а не от cwd процесса (#101 п.1).
+ *
+ * `null` — путь не раскрыт (`$VAR`, `$(…)`): гадать о нём значило бы снова отдать чужое содержимое.
+ *
+ * @param {string} cwd каталог, в котором идёт сегмент
+ * @param {string} operand операнд команды
+ * @returns {string | null}
+ */
+function resolveOperand(cwd, operand) {
+	if (cwd === null || /[$`]/.test(operand)) return null;
+	const expanded = operand.replace(/^~(?=\/|$)/, homedir());
+	return resolve(cwd, expanded);
+}
+
+/**
+ * Цель `cd` из одного сегмента, либо `null`.
+ *
+ * @param {string} segment
+ * @returns {string | null}
+ */
+function cdSegmentTarget(segment) {
+	if (!CD_SEGMENT.test(segment)) return null;
+	const parts = words(segment);
+	return parts[0] === "cd" && parts[1] !== undefined ? parts[1] : null;
+}
+
+/**
+ * BRE-шаблон `grep` → регулярное выражение JS (#95).
+ *
+ * В shell-grep по умолчанию BRE: альтернация — `\|`, группа — `\(`, повтор — `\+`. В JS-regex эти
+ * последовательности — литералы (`\|` ищет символ `|`). Сторож повторял шаблон через `new RegExp`
+ * и отвечал «совпадений нет» на `grep -n 'putenv\|tearDown' файл`, где совпадения были (#16200):
+ * вывод «такого кода нет» делался по ложному ответу инструмента, заведённого ровно ради точности.
+ *
+ * @param {string} pattern
+ * @returns {string}
+ */
+export function breToJs(pattern) {
+	const escaped = { "|": "|", "(": "(", ")": ")", "+": "+", "?": "?", "{": "{", "}": "}" };
+	let out = "";
+	for (let index = 0; index < pattern.length; index += 1) {
+		const char = pattern[index];
+		if (char !== "\\" || index + 1 >= pattern.length) {
+			out += char;
+
+			continue;
+		}
+		const next = pattern[index + 1];
+		out += escaped[next] ?? `\\${next}`;
+		index += 1;
+	}
+	return out;
+}
+
+/**
+ * Число записей каталога, если это каталог и их читаемо много; иначе `null`.
+ *
+ * @param {string | null} path
+ * @returns {number | null}
+ */
+function directoryEntryCount(path) {
+	if (path === null) return null;
+	try {
+		const stat = statSync(path);
+		if (!stat.isDirectory()) return null;
+		return readdirSync(path).length;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Строка для stderr: одна короткая фраза о том, что сторож поменял в команде.
+ *
+ * @param {string} note
+ * @returns {string}
+ */
+function noteCommand(note) {
+	return `printf '%s\\n' ${shellQuote(note)} >&2`;
+}
+
+/**
+ * Слово в одинарных кавычках для shell, а не для JS-шаблона: апостроф внутри ломает кавычки.
+ *
+ * @param {string} text
+ * @returns {string}
+ */
+function shellQuote(text) {
+	return "'" + text.replaceAll("'", "'\\''") + "'";
+}
 
 /**
  * Слова сегмента: кавычки снимаются, перенаправления остаются отдельными словами.
@@ -170,10 +348,11 @@ function probeFile(path) {
 /**
  * Файл читается только через `read`: размер не доказан большим (или не проверен вовсе).
  *
- * @param {string} path
+ * @param {string | null} path абсолютный путь (резолвится от `cd`, см. `resolveOperand`)
  * @returns {boolean}
  */
 function readsSmallFile(path) {
+	if (path === null) return true;
 	const probe = probeFile(path);
 	return probe === null || probe.size <= READ_LIMIT_BYTES;
 }
@@ -297,21 +476,25 @@ function linesExcerpt(path, from, to) {
 /**
  * Совпадения `grep -n <шаблон> <файл>` с номерами строк.
  *
- * Шаблон берётся как регулярное выражение (grep по умолчанию BRE, JS — ERE: для конструкций вроде `\(`
- * они расходятся, для обычных слов и путей — нет). Не разобранный как регулярка шаблон
- * ищется подстрокой — лучше грубый ответ, чем пустой.
+ * Шаблон берётся так, как его понял бы сам grep: BRE-эскейпы (`\|`, `\(`, `\+`) переводятся в
+ * регулярное выражение JS (#95). Шаблон, который после перевода всё равно не разбирается,
+ * ищется подстрокой — и ответ это называет: «шаблон не разобран», а не «совпадений нет»:
+ * разница между «нет совпадений» и «не смог прочитать запрос» — это разница между фактом и
+ * догадкой, а именно на ней ломался вывод ретро #16200.
  *
- * @param {string} path
+ * @param {string} path абсолютный путь
  * @param {string} pattern
  * @returns {string}
  */
 function grepExcerpt(path, pattern) {
 	let test;
+	let unparsed = false;
 	try {
-		const re = new RegExp(pattern);
+		const re = new RegExp(breToJs(pattern));
 		test = (line) => re.test(line);
 	} catch {
 		test = (line) => line.includes(pattern);
+		unparsed = true;
 	}
 	try {
 		const all = readFileSync(path, "utf8").split("\n");
@@ -320,7 +503,11 @@ function grepExcerpt(path, pattern) {
 			if (test(all[i])) hits.push(`${String(i + 1).padStart(6, " ")}\t${all[i]}`);
 			if (hits.length > EXCERPT_MAX_MATCHES) break;
 		}
-		if (hits.length === 0) return `совпадений «${pattern}» в файле нет`;
+		if (hits.length === 0) {
+			return unparsed
+				? `шаблон «${pattern}» не разобран как регулярное выражение; подстрокой совпадений в файле нет`
+				: `совпадений «${pattern}» в файле нет`;
+		}
 		const shown = hits.slice(0, EXCERPT_MAX_MATCHES);
 		if (hits.length > EXCERPT_MAX_MATCHES) shown.push(`… совпадений больше ${EXCERPT_MAX_MATCHES}: сузьте шаблон или берите ffgrep с limit`);
 		return shown.join("\n");
@@ -358,10 +545,15 @@ function toolNameVerdict(segment) {
 /**
  * Правило чтения: `sed -n`, `cat <файл>`, `grep -n <файл>` по файлу до 50 КБ и `grep -r` по дому.
  *
+ * Пути резолвятся от `cwd` — каталога, в котором идёт сегмент после `cd` того же вызова (#101 п.1):
+ * `cd /воркдерево && cat файл` отдавал в отказе файл из основного дерева, и отказ читался как
+ * «вот текущее состояние файла».
+ *
  * @param {string} segment
+ * @param {string} cwd каталог сегмента (уже раскрытый от `cd`)
  * @returns {{ allowed: boolean, reason: string, hint: string, excerpt?: string } | null}
  */
-function readingVerdict(segment) {
+function readingVerdict(segment, cwd) {
 	const parts = words(segment);
 	const command = parts[0];
 	if (command !== "sed" && command !== "cat" && command !== "grep") return null;
@@ -375,14 +567,16 @@ function readingVerdict(segment) {
 		if (!quiet) return null;
 		const script = args.find((token) => SED_PRINT_RANGE.test(token));
 		if (script === undefined) return null;
-		const file = operands(args.slice(args.indexOf(script) + 1))[0];
-		if (file === undefined || file === "-" || !readsSmallFile(file)) return null;
+		const operand = operands(args.slice(args.indexOf(script) + 1))[0];
+		if (operand === undefined || operand === "-") return null;
+		const file = resolveOperand(cwd, operand);
+		if (!readsSmallFile(file)) return null;
 		const [from, to] = script.slice(0, -1).split(",").map((value) => Number.parseInt(value, 10));
 		return {
 			allowed: false,
 			reason: "`sed -n 'N,Mp' <файл>` — чтение файла через bash; преимуществ перед `read` у него нет.",
 			hint: hintRead,
-			excerpt: linesExcerpt(file, from, Number.isFinite(to) ? to : from),
+			excerpt: file === null ? "" : linesExcerpt(file, from, Number.isFinite(to) ? to : from),
 		};
 	}
 
@@ -390,16 +584,18 @@ function readingVerdict(segment) {
 		// `cat > файл`, `cat >> журнал`, `cat <<EOF` — это запись и heredoc, а не чтение: их правило
 		// не трогает (иначе блокировался бы самый обычный способ создать временный файл).
 		if (args.some((token) => token.includes(">") || token.startsWith("<"))) return null;
-		const files = operands(args);
-		if (files.length === 0 || files.includes("-")) return null;
+		const names = operands(args);
+		if (names.length === 0 || names.includes("-")) return null;
+		const files = names.map((name) => resolveOperand(cwd, name));
 		if (!files.some((file) => readsSmallFile(file))) return null;
 		// Несколько файлов сторож не отдаёт: `cat a b` — это склейка, и порядок в ней важен для
 		// читающего; без содержимого остаётся обычный отказ.
+		const excerpt = files.length !== 1 || files[0] === null ? "" : linesExcerpt(files[0], 1, EXCERPT_MAX_LINES);
 		return {
 			allowed: false,
 			reason: "`cat <файл>` — то же чтение, что и `read`, но без номеров строк и без номера области.",
 			hint: hintRead,
-			excerpt: files.length === 1 ? linesExcerpt(files[0], 1, EXCERPT_MAX_LINES) : "",
+			excerpt,
 		};
 	}
 
@@ -418,21 +614,24 @@ function readingVerdict(segment) {
 	}
 
 	const numbered = args.some((token) => token === "--line-number" || /^-[a-zA-Z]*n[a-zA-Z]*$/.test(token));
-	const files = positional.slice(1);
+	const names = positional.slice(1);
 	// `grep -n шаблон -` читает stdin: файла нет, и правило чтения файла к нему не относится.
-	if (!numbered || files.length === 0 || files.includes("-")) return null;
+	if (!numbered || names.length === 0 || names.includes("-")) return null;
+	const files = names.map((name) => resolveOperand(cwd, name));
 	const suspicious = files.some((file) => {
+		if (file === null) return true;
 		const probe = probeFile(file);
 		return probe !== null && !probe.isFile ? false : readsSmallFile(file);
 	});
 	if (!suspicious) return null;
 	// Шаблон — первый операнд, файлы — остальные; для нескольких файлов содержимое не отдаётся, как и
 	// у `cat`: смешать их вывод значило бы соврать о том, откуда строка.
+	const excerpt = files.length !== 1 || files[0] === null ? "" : grepExcerpt(files[0], positional[0] ?? "");
 	return {
 		allowed: false,
 		reason: "`grep -n <файл>` — поиск по файлу через bash; `ffgrep` учитывает `.gitignore` и держит вывод в `limit`.",
 		hint: hintRead,
-		excerpt: files.length === 1 ? grepExcerpt(files[0], positional[0] ?? "") : "",
+		excerpt,
 	};
 }
 
@@ -585,7 +784,7 @@ export function splitSegments(command) {
 /**
  * @param {string} command
  * @param {{ allow?: boolean }} [options] allow — осознанный обход (PI_CALL_GUARD_ALLOW=1)
- * @returns {{ allowed: boolean, reason?: string, hint?: string }}
+ * @returns {{ allowed: boolean, reason?: string, hint?: string, excerpt?: string, patchedCommand?: string, note?: string }}
  */
 export function classifyCall(command, options = {}) {
 	if (options.allow) return { allowed: true };
@@ -599,7 +798,10 @@ export function classifyCall(command, options = {}) {
 		};
 	}
 
-	const segments = splitSegments(trimmed);
+	// Тело heredoc — данные для команды, а не команда (#101 п.2): пример `cat <файл>` внутри
+	// `gh issue create --body-file … <<'EOF'` блокировал публикацию самого issue про этот дефект.
+	const parsed = stripHeredocBodies(trimmed);
+	const segments = splitSegments(parsed);
 	const useful = segments.filter((segment) => !NOOP_SEGMENT.test(segment) && !CD_SEGMENT.test(segment));
 	if (useful.length === 0) {
 		return {
@@ -612,45 +814,92 @@ export function classifyCall(command, options = {}) {
 		};
 	}
 
+	// Исправления, а не отказы (#102): сторож вставляет в команду то, что агент забыл, и говорит
+	// об этом строкой в stderr. Отказ стоил хода там, где правка однозначна.
+	const patches = [];
+	let patched = trimmed;
+	const patch = (from, to) => {
+		if (from === "" || !patched.includes(from)) return false;
+		patched = patched.replace(from, to);
+		return true;
+	};
+
 	// Конвейер в `head`/`tail` и голый `$?` в более позднем сегменте: код возврата приходит от `tail`.
 	// Проверка идёт по порядку сегментов, а не по всей строке: `echo $? | tail` — обратный случай
-	// (код читается до обрезки), и блокировать его незачем.
+	// (код читается до обрезки), и трогать его незачем.
+	let pipefail = false;
+	let needsPipefail = false;
 	const trimIndex = segments.findIndex((segment) => PIPELINE_TRIM.test(segment));
 	if (trimIndex !== -1 && segments.slice(trimIndex + 1).some((segment) => EXIT_STATUS_READ.test(segment))) {
-		// `set -o pipefail` в этой же команде делает `$?` верным — тогда находки нет.
-		const pipefail = segments.some((segment) => PIPEFAIL_SEGMENT.test(unwrapped(segment).trim()));
-		if (!pipefail) {
+		// `set -o pipefail` в этой же команде делает `$?` верным — тогда правки нет.
+		pipefail = segments.some((segment) => PIPEFAIL_SEGMENT.test(unwrapped(segment).trim()));
+		// Отказ остаётся только там, где подстановка `$?` принадлежит подстановке, а не конвейеру
+		// командной строки: `x=$(cmd | tail …; echo $?)` — код печатает сама подстановка.
+		if (!pipefail && EXIT_STATUS_IN_SUBSTITUTION.test(trimmed)) {
 			return {
 				allowed: false,
-				reason: "Конвейер в `head`/`tail` и голый `$?` после него: код возврата приходит от `tail`, а не от команды.",
+				reason: "Конвейер в `head`/`tail` и `$?` после него — внутри `$( … )`: код возврата принадлежит подстановке, а `pipefail` в начало строки его не исправит.",
 				hint: [
 					`Заблокирован сегмент \`${segments[trimIndex].trim()}\` — команда не выполнена целиком, остальные её сегменты тоже.`,
-					`Готовая строка, которую сторож пропускает: \`set -o pipefail; ${trimmed}\``,
-					"Код первой ступени в обход правила — `echo \"exit=${PIPESTATUS[0]}\"` вместо голого `$?`.",
-					"Гейт стоит на форме вызова, а не на смысле: 22 таких чтения за одну сессию (#16087), и одно ушло в трекер как вывод о коде.",
+					"Код первой ступени в обход правила — `${PIPESTATUS[0]}` вместо голого `$?`, либо снимите конвейер.",
 				].join("\n"),
 			};
 		}
+		needsPipefail = !pipefail;
 	}
 
+	let cwd = process.cwd();
 	for (const raw of segments) {
 		// Чтение проверяется и в конвейере, по первой ступени: `cat файл | head` — тот же `cat`, и
 		// именно `| head` был самым естественным обходом правила (замер ревью: 26 вызовов `sed -n`,
 		// ради которых правило написано, проходили ровно так). Правило 2 наоборот требует конвейер
 		// как признак фильтра, поэтому ниже сегменты с `|` по-прежнему пропускаются.
+		const stage = unwrapped(firstPipelineStage(raw));
+
+		// Каталог сегмента: относительный операнд резолвится от последнего `cd` (#101 п.1).
+		const cdTo = cdSegmentTarget(stage.trim());
+		if (cdTo !== null) cwd = resolveOperand(cwd, cdTo);
+
 		// Имя тула вместо бинарника проверяется раньше чтения: `ffgrep` — не команда, и отказ должен
 		// называть вызов тула, а не правило чтения файла.
-		const toolName = toolNameVerdict(unwrapped(firstPipelineStage(raw)));
+		const toolName = toolNameVerdict(stage);
 		if (toolName !== null) return toolName;
 
-		const reading = readingVerdict(unwrapped(firstPipelineStage(raw)));
+		const reading = readingVerdict(stage, cwd);
 		if (reading !== null) return reading;
 
 		// `sleep` проверяется до пропуска конвейера: `sleep 400 | tee log` — то же ожидание паузой.
-		const sleeping = sleepVerdict(unwrapped(firstPipelineStage(raw)).trim());
+		const sleeping = sleepVerdict(stage.trim());
 		if (sleeping !== null) return sleeping;
 
+		// Правки ниже переписывают сегмент целиком, поэтому конвейерные ступени сюда не идут.
 		if (/\|/.test(raw)) continue;
+
+		// `2>/dev/null` на `cd`/`ls`/`test -d` глушит единственный сигнал о промахе в пути (#102 п.3):
+		// после такой команды следующие сегменты работают в каталоге от предыдущего `cd`.
+		if (/^(?:cd|ls|test)\b/.test(stage.trim()) && STDERR_SILENCED.test(raw)) {
+			const cleaned = raw.replace(STDERR_SILENCED, "").trim();
+			if (patch(raw.trim(), cleaned)) {
+				patches.push(`\`2>/dev/null\` с \`${stage.trim().split(/\s+/)[0]}\` снят: он глушит ошибку пути`);
+			}
+		}
+
+		// Листинг каталога с тысячами записей режется до нескольких строк (#102 п.2): `ls docs`
+		// отдал 50 КБ в ретро #16219, и такой хвост — потеря вывода, а не самого вызова.
+		const listing = PLAIN_LS.exec(stage.trim());
+		if (listing !== null) {
+			const target = listing[1];
+			const dir = resolveOperand(cwd, target);
+			const count = directoryEntryCount(dir);
+			if (count !== null && count > LISTING_MAX_ENTRIES) {
+				const quoted = shellQuote(target);
+				const replacement = `{ n=$(ls -1 ${quoted} | wc -l); ls -1 ${quoted} | head -${LISTING_MAX_LINES}; printf '\\ncall-guard: каталог %s: %s записей, показаны первые ${LISTING_MAX_LINES}\\n' ${quoted} "$n"; }`;
+				if (patch(raw.trim(), replacement)) {
+					patches.push(`\`ls ${target}\`: ${count} записей — показаны первые ${LISTING_MAX_LINES}`);
+				}
+			}
+		}
+
 		const segment = unwrapped(raw);
 
 		if (SED_IN_PLACE.test(segment)) {
@@ -678,7 +927,15 @@ export function classifyCall(command, options = {}) {
 		}
 	}
 
-	return { allowed: true };
+	if (needsPipefail) {
+		patched = `set -o pipefail; ${patched}`;
+		patches.push("добавлен `set -o pipefail`: `$?` теперь от первой ступени конвейера, а не от `tail`");
+	}
+
+	if (patches.length === 0) return { allowed: true };
+
+	const note = `call-guard: ${patches.join("; ")}`;
+	return { allowed: true, patchedCommand: `${noteCommand(note)}; ${patched}`, note };
 }
 
 /**

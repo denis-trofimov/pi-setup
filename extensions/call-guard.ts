@@ -6,6 +6,10 @@
 // Зачем: #15738 п.5 (пять пустых вызовов и один дамп домашнего каталога) и #15749 п.5
 // (`git branch -a` вернул 2168 строк, 50 КБ). Правило было записано в AGENTS.md, но гейта у него не было.
 //
+// С #102 сторож не только блокирует: там, где правка однозначна (`$?` после конвейера в `head`/`tail`,
+// листинг каталога с тысячами записей, `2>/dev/null` на `cd`/`ls`), он правит команду и говорит об этом
+// строкой в stderr. Отказ стоил хода шесть раз за одну сессию (#16219), а исправление — ни разу.
+//
 // Блокировка без диалога: пустой вызов и нефильтрованный список веток — это ошибка в аргументе,
 // а не решение пользователя, и спрашивать «разрешить?» значит предлагать её подтвердить.
 // Осознанный обход — PI_CALL_GUARD_ALLOW=1.
@@ -23,6 +27,16 @@ export default function callGuard(pi: ExtensionAPI) {
 		if (typeof command !== "string") return undefined;
 
 		// Обход читается на момент вызова: его включают в окружении сессии, а не при загрузке pi.
-		return toToolCallResult(classifyCall(command, { allow: process.env.PI_CALL_GUARD_ALLOW === "1" }));
+		const verdict = classifyCall(command, { allow: process.env.PI_CALL_GUARD_ALLOW === "1" });
+		if (verdict.allowed) {
+			// `event.input` мутируется до исполнения вызова — это и есть место, где сторож правит
+			// команду (#102): подставляет `set -o pipefail`, режет листинг, снимает `2>/dev/null`.
+			if (typeof verdict.patchedCommand === "string" && verdict.patchedCommand !== command) {
+				event.input.command = verdict.patchedCommand;
+			}
+			return undefined;
+		}
+
+		return toToolCallResult(verdict);
 	});
 }
