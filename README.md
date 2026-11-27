@@ -42,7 +42,7 @@ Do **not** install this checkout as an active Pi package in normal use. Loading 
 | Install safety | `--dry-run` preview, `--backup`, and `--revert <backup-dir>` |
 | Sync | `pi-setup-sync` copies live `~/.pi/agent` resources back to this repo, commits, and pushes |
 | Extensions | welcome header, context breakdown, file-change review, safety guard, custom footer, local model manager |
-| Config examples | Safe `settings.example.json`, `mcp.example.json`, `micme.example.json`, `playwright-mcp.json`, and `models.example.json`; the settings example pins OpenRouter through the local xray proxy and gates delegation with `subagents.modelScope` |
+| Config examples | Safe `settings.example.json`, `mcp.example.json`, `micme.example.json`, `playwright-mcp.json`, and `models.example.json`; the settings example pins RouterAI through the local xray proxy and gates delegation with `subagents.modelScope` |
 | Model cap check | `pi-models-check` probes every id in the delegation allow list against the provider, so a catalog entry is never mistaken for a served model |
 | Russian prose check | `ru-spellcheck` catches Latin homoglyphs inside Cyrillic words and dictionary misses in Russian text, so a flash-tier model's corrupted prose is caught before it is published |
 | Search guard | `rg` wrapper refuses `-r`/`--replace` (a substitution, not recursion) and an empty pattern, so a search cannot silently rewrite or flood the code an agent is reading |

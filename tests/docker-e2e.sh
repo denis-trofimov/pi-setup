@@ -235,7 +235,7 @@ grep -q "docs/session-logs.md" /root/.pi/agent/AGENTS.md
 grep -q "docs/session-logs.md" /root/.pi/agent/skills/retro/SKILL.md
 test -L /root/.local/bin/pi-models-check
 test "$(/root/.local/bin/pi-models-check --list | wc -l)" -eq 21
-echo "model cap ok (21 allow entries = 14 ids + 7 routerai mirrors, adapter roles inside the allow list, delegation-models table matches)"
+echo "model cap ok (21 allow entries = 14 ids + 7 routerai mirrors, per-agent allow lists inside the global one, delegation-models table matches)"
 
 printf "\nVERIFY RU-SPELLCHECK\n"
 test -L /root/.local/bin/ru-spellcheck

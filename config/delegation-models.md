@@ -6,9 +6,10 @@ has to be chosen, not on every session start.
 
 ## Allowed
 
-Only these ids, all on `openrouter/`. Prices below are the OpenRouter list, read from
-`GET https://openrouter.ai/api/v1/models` on 2026-11-16; the cap is provider-side, so a model in
-the local catalog is not evidence it works.
+Only these ids. Each is on `openrouter/`; on a machine with no OpenRouter provider the same bare
+slug also runs under `routerai/` (mirror table below). Prices below are the OpenRouter list, read
+from `GET https://openrouter.ai/api/v1/models` on 2026-11-16; the cap is provider-side, so a model
+in the local catalog is not evidence it works.
 
 | id | in | **cache read** | out | role |
 | --- | --- | --- | --- | --- |
@@ -68,8 +69,9 @@ table above stays the policy; only the prefix changes.
 | `routerai/minimax/minimax-m3` | 0.306 | 0.066 | 1.276 |
 
 Read from `providers.routerai.models[].cost` in the live `models.json` on 2026-11-27, dollars per
-million tokens. `glm-5.3-flash` bills cache reads at 20% there instead of OpenRouter's 75%, and the
-deepseek ratios hold, so the cache-read ranking above still picks the seats. The other 7 ids
+million tokens. `glm-5.3-flash` bills cache reads at 20% there instead of OpenRouter's 75%, and
+deepseek still bills them far below input (18% for `-1017`, 1.5% for `v4.1-flash`), so the
+cache-read ranking above still picks the seats. The other 7 ids
 (`glm-5`, `glm-5.1`, `glm-4.7-flash`, `ling-3.*`, `minimax-m3.1-flash`) exist only on OpenRouter and
 stay unused on such a machine.
 
