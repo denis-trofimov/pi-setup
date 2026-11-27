@@ -16,6 +16,14 @@ remote inside a container. The login procedure that used to be tested here moved
 skill it belongs to (msb-lk: `.pi/skills/test-farm-uat/tests/`), so this repo no longer carries
 those two scripts.
 
+## A test must not depend on the dictionary
+
+A test that relies on a word being *absent* from `ru_RU` measures the dictionary version, not the
+behaviour. It passed here and went red twice on the runner over the same case (PR #79): hunspell
+knew the word elsewhere. Pin the case to something the test itself owns — a denylist entry (a
+banned word is always a finding, whatever the dictionary says) or an explicit allow entry. The
+absence of a word in the system dictionary is not a property to build a test on.
+
 ## Testing a script that writes to `$HOME`
 
 `install.sh`, `sync.sh`, and `uninstall.sh` all write outside the repo, so a test points
